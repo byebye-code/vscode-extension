@@ -1,0 +1,78 @@
+{
+  "name": "vscode-extension",
+  "displayName": "88Code 插件",
+  "description": "88Code API 管理插件",
+  "version": "0.0.3",
+  "publisher": "88code",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/88code/vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "code88-panel",
+          "title": "88Code",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "code88-panel": [
+        {
+          "type": "webview",
+          "id": "loginView",
+          "name": "登录",
+          "when": "!88code:loggedIn"
+        },
+        {
+          "type": "webview",
+          "id": "dashboardView",
+          "name": "看板",
+          "when": "88code:loggedIn"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "extension.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "88code.login",
+        "title": "登录 88Code"
+      },
+      {
+        "command": "88code.logout",
+        "title": "退出登录"
+      },
+      {
+        "command": "88code.refreshCredits",
+        "title": "刷新剩余积分"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "precompile": "node scripts/bump-version.js",
+    "compile": "tsc -p ./",
+    "compile-no-bump": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "bump-version": "node scripts/bump-version.js"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^3.6.2",
+    "sm-crypto": "^0.3.13",
+    "typescript": "^4.9.4"
+  }
+}
