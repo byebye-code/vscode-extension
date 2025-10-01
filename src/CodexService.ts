@@ -23,15 +23,17 @@ export class CodexService {
     }
 
     async start() {
+        // 隐藏 Codex 状态栏显示
+        this._statusBarItem.hide();
         // 检查是否已登录
-        const token = this._context.globalState.get('88code_token') as string;
-        if (token) {
-            this._statusBarItem.show();
-            await this.fetchCodexUsage();
-            this.startPeriodicRefresh();
-        } else {
-            this._statusBarItem.hide();
-        }
+        // const token = this._context.globalState.get('88code_token') as string;
+        // if (token) {
+        //     this._statusBarItem.show();
+        //     await this.fetchCodexUsage();
+        //     this.startPeriodicRefresh();
+        // } else {
+        //     this._statusBarItem.hide();
+        // }
     }
 
     async stop() {

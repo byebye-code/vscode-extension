@@ -45,7 +45,7 @@ class DashboardViewProvider {
                 this.httpRequestWithAuth('GET', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my/credit-history?pageNum=1&pageSize=20', token),
                 this.httpRequestWithAuth('GET', 'https://www.88code.org/admin-api/cc-admin/user/openai-daily-usage', token)
             ]);
-            // 提取积分信息
+            // 提取余额信息
             let credits = 0;
             if (creditsResponse.ok && creditsResponse.data && creditsResponse.data.list && creditsResponse.data.list.length > 0) {
                 credits = creditsResponse.data.list[0].remainingCredits || 0;
@@ -216,11 +216,151 @@ class DashboardViewProvider {
                     color: var(--vscode-textLink-foreground);
                     margin-bottom: 8px;
                     font-variant-numeric: tabular-nums;
+                    transition: all 0.3s ease;
+                }
+
+                /* 余额变化提示样式 - 显示在副标题中 */
+                .credit-change {
+                    font-size: 13px;
+                    font-weight: 600;
+                    margin: 0 4px;
+                    display: inline-block;
+                    animation: fadeIn 0.3s ease;
+                }
+
+                .credit-change.positive {
+                    color: #4caf50; /* 绿色 - 增加 */
+                }
+
+                .credit-change.negative {
+                    color: #ff9800; /* 橙色 - 减少 */
+                }
+
+                /* 淡入动画 */
+                @keyframes fadeIn {
+                    from {
+                        opacity: 0;
+                        transform: scale(0.8);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                }
+
+                /* 淡出动画 */
+                @keyframes fadeOut {
+                    from {
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                    to {
+                        opacity: 0;
+                        transform: scale(0.8);
+                    }
+                }
+
+                .credit-change.fade-out {
+                    animation: fadeOut 0.3s ease forwards;
                 }
 
                 .credit-subtitle {
                     font-size: 14px;
                     color: var(--vscode-descriptionForeground);
+                }
+
+                /* 设置面板样式 */
+                .settings-panel {
+                    margin-top: 8px;
+                }
+
+                .settings-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    cursor: pointer;
+                    user-select: none;
+                    margin-bottom: 0;
+                }
+
+                .settings-header:hover {
+                    opacity: 0.8;
+                }
+
+                .collapse-icon {
+                    font-size: 14px;
+                    transition: transform 0.3s ease;
+                }
+
+                .collapse-icon.collapsed {
+                    transform: rotate(-90deg);
+                }
+
+                .settings-content {
+                    max-height: 500px;
+                    overflow: hidden;
+                    transition: max-height 0.3s ease, opacity 0.3s ease;
+                    opacity: 1;
+                    padding-top: 16px;
+                }
+
+                .settings-content.collapsed {
+                    max-height: 0;
+                    opacity: 0;
+                    padding-top: 0;
+                }
+
+                .setting-group {
+                    margin-bottom: 16px;
+                }
+
+                .setting-label {
+                    display: block;
+                    font-size: 13px;
+                    color: var(--vscode-foreground);
+                    margin-bottom: 6px;
+                    font-weight: 500;
+                }
+
+                .setting-input {
+                    width: 100%;
+                    padding: 8px 12px;
+                    background-color: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 4px;
+                    font-size: 13px;
+                    font-family: var(--vscode-font-family);
+                    outline: none;
+                    transition: border-color 0.2s ease;
+                }
+
+                .setting-input:focus {
+                    border-color: var(--vscode-focusBorder);
+                }
+
+                .setting-input::placeholder {
+                    color: var(--vscode-input-placeholderForeground);
+                }
+
+                .setting-checkbox {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--vscode-foreground);
+                }
+
+                .setting-checkbox input[type="checkbox"] {
+                    width: 16px;
+                    height: 16px;
+                    cursor: pointer;
+                }
+
+                .settings-save-btn {
+                    width: 100%;
+                    margin-top: 8px;
                 }
 
                 /* MD3 数据卡片 */
@@ -409,23 +549,25 @@ class DashboardViewProvider {
                 </div>
                 
                 <div id="dashboardContent" style="display: none;">
-                    <!-- MD3 积分卡片 -->
+                    <!-- MD3 余额卡片 -->
                     <div class="credit-card">
                         <div class="credit-header">
-                            <span class="credit-title">剩余积分</span>
+                            <span class="credit-title">剩余余额</span>
                         </div>
                         <div class="credit-amount" id="remainingCredits">-</div>
-                        <div class="credit-subtitle">您的可用额度</div>
+                        <div class="credit-subtitle">
+                            您的可用额度<span id="creditChange"></span>（美元）
+                        </div>
                     </div>
 
-                    <!-- MD3 Codex 用量卡片 -->
-                    <div class="credit-card">
+                    <!-- MD3 Codex 用量卡片 - 已隐藏 -->
+                    <!-- <div class="credit-card">
                         <div class="credit-header">
                             <span class="credit-title">Codex 剩余用量</span>
                         </div>
                         <div class="credit-amount" id="codexUsage">-</div>
                         <div class="credit-subtitle">今日 OpenAI 余额</div>
-                    </div>
+                    </div> -->
 
                     <!-- 今日活动卡片 -->
                     <div class="data-card">
@@ -533,11 +675,65 @@ class DashboardViewProvider {
                     return num.toLocaleString();
                 }
 
-                // 格式化积分 - 显示完整数字
+                // 格式化余额 - 显示完整数字（美元）
                 function formatCredits(credits) {
-                    return credits.toLocaleString();
+                    return '$' + credits.toString();
                 }
 
+                // 存储上一次的余额，用于检测变化
+                let previousCredits = null;
+                let hideChangeTimer = null;
+
+                // 更新余额显示，包含变化提示
+                function updateCreditsDisplay(credits) {
+                    const creditElement = document.getElementById('remainingCredits');
+                    const changeElement = document.getElementById('creditChange');
+                    if (!creditElement || !changeElement) return;
+
+                    // 更新余额数值
+                    creditElement.textContent = formatCredits(credits);
+
+                    // 计算余额变化
+                    let changeHtml = '';
+                    if (previousCredits !== null && previousCredits !== credits) {
+                        const change = credits - previousCredits;
+                        if (change < 0) {
+                            // 余额减少：橙色显示负值
+                            changeHtml = '<span class="credit-change negative">(' + change + ')</span>';
+                        } else if (change > 0) {
+                            // 余额增加：绿色显示正值
+                            changeHtml = '<span class="credit-change positive">(+' + change + ')</span>';
+                        }
+                    }
+
+                    // 更新变化提示到副标题中间
+                    changeElement.innerHTML = changeHtml;
+
+                    // 如果有变化，1秒后隐藏变化提示
+                    if (changeHtml) {
+                        // 清除之前的定时器
+                        if (hideChangeTimer) {
+                            clearTimeout(hideChangeTimer);
+                        }
+
+                        // 1秒后隐藏变化提示
+                        hideChangeTimer = setTimeout(function() {
+                            const change = changeElement.querySelector('.credit-change');
+                            if (change) {
+                                // 添加淡出动画
+                                change.classList.add('fade-out');
+
+                                // 动画完成后移除元素
+                                setTimeout(function() {
+                                    changeElement.innerHTML = '';
+                                }, 300); // 等待淡出动画完成
+                            }
+                        }, 1000);
+                    }
+
+                    // 保存当前余额
+                    previousCredits = credits;
+                }
 
                 // 监听来自扩展的消息
                 window.addEventListener('message', event => {
@@ -553,17 +749,17 @@ class DashboardViewProvider {
                 function updateDashboard(data) {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('dashboardContent').style.display = 'block';
-                    
-                    // 积分显示 - 使用完整数字
+
+                    // 余额显示 - 使用完整数字（美元格式），带变化提示
                     if (data.credits !== undefined) {
-                        document.getElementById('remainingCredits').textContent = formatCredits(data.credits);
+                        updateCreditsDisplay(data.credits);
                     }
 
-                    // Codex 用量显示 - 使用美元格式
-                    if (data.codex && data.codex.remaining !== undefined && data.codex.limit !== undefined) {
-                        const codexText = '$' + data.codex.remaining.toFixed(2) + '/$' + data.codex.limit.toFixed(2);
-                        document.getElementById('codexUsage').textContent = codexText;
-                    }
+                    // Codex 用量显示 - 已隐藏，注释掉相关代码
+                    // if (data.codex && data.codex.remaining !== undefined && data.codex.limit !== undefined) {
+                    //     const codexText = '$' + data.codex.remaining.toFixed(2) + '/$' + data.codex.limit.toFixed(2);
+                    //     document.getElementById('codexUsage').textContent = codexText;
+                    // }
                     
                     // 概览信息
                     document.getElementById('totalApiKeys').textContent = data.overview.totalApiKeys;

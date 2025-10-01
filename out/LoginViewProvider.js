@@ -471,7 +471,7 @@ class LoginViewProvider {
                                 ></textarea>
                             </div>
                             <div class="help-text">
-                                Token 通常是一个长字符串，以 "eyJ" 开头（JWT格式）或其他格式
+                                Token 通常是一个32位的长字符串，非JWT格式！
                             </div>
                         </div>
                         

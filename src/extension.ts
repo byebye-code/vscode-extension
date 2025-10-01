@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { LoginViewProvider } from './LoginViewProvider';
 import { DashboardViewProvider } from './DashboardViewProvider';
+import { SettingsViewProvider } from './SettingsViewProvider';
 import { CreditService } from './CreditService';
 import { CodexService } from './CodexService';
 
@@ -46,6 +47,17 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // 注册设置视图提供程序
+    const settingsViewProvider = new SettingsViewProvider(context);
+    console.log('正在注册 SettingsViewProvider，viewType:', SettingsViewProvider.viewType);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(SettingsViewProvider.viewType, settingsViewProvider, {
+            webviewOptions: {
+                retainContextWhenHidden: true
+            }
+        })
+    );
+
     // 注册命令
     const helloWorldDisposable = vscode.commands.registerCommand('extension.helloWorld', () => {
         vscode.window.showInformationMessage('Hello World from 88Code Extension!');
@@ -71,6 +83,16 @@ export function activate(context: vscode.ExtensionContext) {
         await creditService.refreshCredits();
     });
 
+    // 显示订阅信息面板命令
+    const showSubscriptionInfoDisposable = vscode.commands.registerCommand('88code.showSubscriptionInfo', () => {
+        creditService.showSubscriptionPanel();
+    });
+
+    // 更新设置命令
+    const updateSettingsDisposable = vscode.commands.registerCommand('88code.updateSettings', async (settings: any) => {
+        creditService.updateSettings(settings);
+    });
+
     // 监听登录状态变化
     const loginStatusListener = vscode.commands.registerCommand('88code.onLoginStatusChanged', async (isLoggedIn: boolean) => {
         if (isLoggedIn) {
@@ -83,10 +105,12 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     context.subscriptions.push(
-        helloWorldDisposable, 
-        loginDisposable, 
-        logoutDisposable, 
+        helloWorldDisposable,
+        loginDisposable,
+        logoutDisposable,
         refreshCreditsDisposable,
+        showSubscriptionInfoDisposable,
+        updateSettingsDisposable,
         loginStatusListener
     );
 }

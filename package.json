@@ -2,7 +2,7 @@
   "name": "vscode-extension",
   "displayName": "88Code 插件",
   "description": "88Code API 管理插件",
-  "version": "0.0.3",
+  "version": "0.0.2",
   "publisher": "88code",
   "repository": {
     "type": "git",
@@ -38,6 +38,11 @@
           "id": "dashboardView",
           "name": "看板",
           "when": "88code:loggedIn"
+        },
+        {
+          "type": "webview",
+          "id": "settingsView",
+          "name": "设置"
         }
       ]
     },

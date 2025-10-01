@@ -4,6 +4,7 @@ exports.deactivate = exports.activate = void 0;
 const vscode = require("vscode");
 const LoginViewProvider_1 = require("./LoginViewProvider");
 const DashboardViewProvider_1 = require("./DashboardViewProvider");
+const SettingsViewProvider_1 = require("./SettingsViewProvider");
 const CreditService_1 = require("./CreditService");
 const CodexService_1 = require("./CodexService");
 // 全局积分服务实例
@@ -37,6 +38,14 @@ function activate(context) {
             retainContextWhenHidden: true
         }
     }));
+    // 注册设置视图提供程序
+    const settingsViewProvider = new SettingsViewProvider_1.SettingsViewProvider(context);
+    console.log('正在注册 SettingsViewProvider，viewType:', SettingsViewProvider_1.SettingsViewProvider.viewType);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(SettingsViewProvider_1.SettingsViewProvider.viewType, settingsViewProvider, {
+        webviewOptions: {
+            retainContextWhenHidden: true
+        }
+    }));
     // 注册命令
     const helloWorldDisposable = vscode.commands.registerCommand('extension.helloWorld', () => {
         vscode.window.showInformationMessage('Hello World from 88Code Extension!');
@@ -58,6 +67,14 @@ function activate(context) {
     const refreshCreditsDisposable = vscode.commands.registerCommand('88code.refreshCredits', async () => {
         await creditService.refreshCredits();
     });
+    // 显示订阅信息面板命令
+    const showSubscriptionInfoDisposable = vscode.commands.registerCommand('88code.showSubscriptionInfo', () => {
+        creditService.showSubscriptionPanel();
+    });
+    // 更新设置命令
+    const updateSettingsDisposable = vscode.commands.registerCommand('88code.updateSettings', async (settings) => {
+        creditService.updateSettings(settings);
+    });
     // 监听登录状态变化
     const loginStatusListener = vscode.commands.registerCommand('88code.onLoginStatusChanged', async (isLoggedIn) => {
         if (isLoggedIn) {
@@ -69,7 +86,7 @@ function activate(context) {
             await codexService.stop();
         }
     });
-    context.subscriptions.push(helloWorldDisposable, loginDisposable, logoutDisposable, refreshCreditsDisposable, loginStatusListener);
+    context.subscriptions.push(helloWorldDisposable, loginDisposable, logoutDisposable, refreshCreditsDisposable, showSubscriptionInfoDisposable, updateSettingsDisposable, loginStatusListener);
 }
 exports.activate = activate;
 function deactivate() { }
