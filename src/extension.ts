@@ -83,6 +83,11 @@ export function activate(context: vscode.ExtensionContext) {
         await creditService.refreshCredits();
     });
 
+    // 重置余额命令
+    const resetCreditsDisposable = vscode.commands.registerCommand('88code.resetCredits', async () => {
+        await creditService.resetCredits();
+    });
+
     // 显示订阅信息面板命令
     const showSubscriptionInfoDisposable = vscode.commands.registerCommand('88code.showSubscriptionInfo', () => {
         creditService.showSubscriptionPanel();
@@ -109,6 +114,7 @@ export function activate(context: vscode.ExtensionContext) {
         loginDisposable,
         logoutDisposable,
         refreshCreditsDisposable,
+        resetCreditsDisposable,
         showSubscriptionInfoDisposable,
         updateSettingsDisposable,
         loginStatusListener
