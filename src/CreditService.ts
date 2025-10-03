@@ -156,8 +156,15 @@ export class CreditService {
             const validResetableSubscriptions = subscriptions.data.filter((sub: any) => 
                 sub.id &&
                 sub.subscriptionStatus === '活跃中' &&
-                sub.subscriptionPlan?.planType !== 'PAY_PER_USE' // 待确认：PAYGO 订阅的值是什么？
+                sub.subscriptionPlan &&
+                sub.subscriptionPlan.planType !== 'PAY_PER_USE' && // 待确认：PAYGO 订阅的值是什么？
+                sub.currentCredits !== sub.subscriptionPlan.creditLimit // 满余额的订阅不需要重置
             );
+
+            if (validResetableSubscriptions.length === 0) {
+                vscode.window.showInformationMessage('没有订阅需要重置');
+                return;
+            }
 
             const results = await Promise.allSettled(validResetableSubscriptions.map(async (sub: any) => {
                 const response = await this.httpRequestWithAuth(

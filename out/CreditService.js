@@ -122,9 +122,14 @@ class CreditService {
             }
             const validResetableSubscriptions = subscriptions.data.filter((sub) => sub.id &&
                 sub.subscriptionStatus === '活跃中' &&
-                sub.subscriptionPlan?.planType !== 'PAY_PER_USE' // 待确认：PAYGO 订阅的值是什么？
+                sub.subscriptionPlan &&
+                sub.subscriptionPlan.planType !== 'PAY_PER_USE' && // 待确认：PAYGO 订阅的值是什么？
+                sub.currentCredits !== sub.subscriptionPlan.creditLimit // 满余额的订阅不需要重置
             );
-            // 并行请求的结果收集（保持原有并行策略，但对错误消息进行格式化）
+            if (validResetableSubscriptions.length === 0) {
+                vscode.window.showInformationMessage('没有订阅需要重置');
+                return;
+            }
             const results = await Promise.allSettled(validResetableSubscriptions.map(async (sub) => {
                 const response = await this.httpRequestWithAuth('POST', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my/reset-credits/' + sub.id, token, null);
                 if (!response) {
