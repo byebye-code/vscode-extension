@@ -36,6 +36,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 case 'logout':
                     await this.logout();
                     break;
+                case 'resetCredits':
+                    await this.resetCredits();
+                    break;
             }
         });
 
@@ -101,6 +104,14 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         await this._context.globalState.update('88code_token', undefined);
         await vscode.commands.executeCommand('setContext', '88code:loggedIn', false);
         vscode.window.showInformationMessage('已退出登录');
+    }
+
+    private async resetCredits() {
+        await vscode.commands.executeCommand('88code.resetCredits');
+        // 重置后刷新仪表盘数据
+        setTimeout(() => {
+            this.loadDashboard();
+        }, 1000);
     }
 
     private httpRequestWithAuth(method: string, url: string, token: string, data?: any): Promise<any> {
@@ -292,6 +303,24 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 .credit-subtitle {
                     font-size: 14px;
                     color: var(--vscode-descriptionForeground);
+                }
+
+                .credit-actions {
+                    margin-top: 12px;
+                    display: flex;
+                    justify-content: flex-end;
+                }
+
+                .credit-reset-btn {
+                    font-size: 12px;
+                    padding: 6px 12px;
+                    border-radius: 16px;
+                    min-width: auto;
+                    flex: none;
+                }
+
+                .button-icon {
+                    font-size: 14px;
                 }
 
                 /* 设置面板样式 */
@@ -583,6 +612,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                         <div class="credit-subtitle">
                             您的可用额度<span id="creditChange"></span>（美元）
                         </div>
+                        <div class="credit-actions">
+                            <button id="resetCreditsBtn" class="md3-button credit-reset-btn">
+                                <span class="button-icon">🔄</span>
+                                重置余额
+                            </button>
+                        </div>
                     </div>
 
                     <!-- MD3 Codex 用量卡片 - 已隐藏 -->
@@ -687,6 +722,13 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                     document.getElementById('dashboardContent').style.display = 'none';
                     vscode.postMessage({
                         type: 'loadDashboard'
+                    });
+                });
+
+                // 重置余额
+                document.getElementById('resetCreditsBtn').addEventListener('click', () => {
+                    vscode.postMessage({
+                        type: 'resetCredits'
                     });
                 });
 

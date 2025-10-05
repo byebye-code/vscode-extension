@@ -67,6 +67,10 @@ function activate(context) {
     const refreshCreditsDisposable = vscode.commands.registerCommand('88code.refreshCredits', async () => {
         await creditService.refreshCredits();
     });
+    // 重置余额命令
+    const resetCreditsDisposable = vscode.commands.registerCommand('88code.resetCredits', async () => {
+        await creditService.resetCredits();
+    });
     // 显示订阅信息面板命令
     const showSubscriptionInfoDisposable = vscode.commands.registerCommand('88code.showSubscriptionInfo', () => {
         creditService.showSubscriptionPanel();
@@ -86,7 +90,7 @@ function activate(context) {
             await codexService.stop();
         }
     });
-    context.subscriptions.push(helloWorldDisposable, loginDisposable, logoutDisposable, refreshCreditsDisposable, showSubscriptionInfoDisposable, updateSettingsDisposable, loginStatusListener);
+    context.subscriptions.push(helloWorldDisposable, loginDisposable, logoutDisposable, refreshCreditsDisposable, resetCreditsDisposable, showSubscriptionInfoDisposable, updateSettingsDisposable, loginStatusListener);
 }
 exports.activate = activate;
 function deactivate() { }

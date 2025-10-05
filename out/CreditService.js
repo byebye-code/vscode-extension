@@ -100,6 +100,66 @@ class CreditService {
             this._isUpdating = false;
         }
     }
+    async resetCredits() {
+        const token = this._context.globalState.get('88code_token');
+        if (!token) {
+            vscode.window.showWarningMessage('请先登录 88Code');
+            return;
+        }
+        if (this._isUpdating) {
+            return; // 防止重复请求
+        }
+        this._isUpdating = true;
+        this._statusBarItem.text = '$(sync~spin) 重置中...';
+        try {
+            const token = this._context.globalState.get('88code_token');
+            if (!token) {
+                throw new Error('未找到登录令牌');
+            }
+            const subscriptions = await this.httpRequestWithAuth('GET', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my', token);
+            if (!Array.isArray(subscriptions?.data)) {
+                throw new Error(subscriptions?.msg || '获取订阅列表失败或返回格式不正确');
+            }
+            const validResetableSubscriptions = subscriptions.data.filter((sub) => sub.id &&
+                sub.subscriptionStatus === '活跃中' &&
+                sub.subscriptionPlan &&
+                sub.subscriptionPlan.planType !== 'PAY_PER_USE' && // 待确认：PAYGO 订阅的值是什么？
+                sub.currentCredits !== sub.subscriptionPlan.creditLimit // 满余额的订阅不需要重置
+            );
+            if (validResetableSubscriptions.length === 0) {
+                vscode.window.showInformationMessage('没有订阅需要重置');
+                return;
+            }
+            const results = await Promise.allSettled(validResetableSubscriptions.map(async (sub) => {
+                const response = await this.httpRequestWithAuth('POST', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my/reset-credits/' + sub.id, token, null);
+                if (!response) {
+                    throw new Error(`#${sub.id} 服务器无响应`);
+                }
+                if (response.ok !== true) {
+                    throw new Error(`#${sub.id} ${response.msg ?? '服务器错误'}`);
+                }
+            }));
+            if (results.every(result => result.status === 'fulfilled')) {
+                vscode.window.showInformationMessage('所有订阅已成功重置余额');
+                await this.fetchCredits();
+            }
+            else {
+                const failedResults = results
+                    .filter((result) => result.status === 'rejected')
+                    .map(result => result.reason instanceof Error ? result.reason.message : String(result.reason));
+                const isPartialFailure = failedResults.length === validResetableSubscriptions.length ?
+                    '全部' : '部分';
+                vscode.window.showErrorMessage(`${isPartialFailure}余额重置失败: ${failedResults.join('; ')}`);
+            }
+        }
+        catch (error) {
+            console.error('重置余额失败:', error);
+            vscode.window.showErrorMessage(`重置余额失败: ${error}`);
+        }
+        finally {
+            this._isUpdating = false;
+        }
+    }
     async fetchCredits() {
         try {
             const token = this._context.globalState.get('88code_token');
