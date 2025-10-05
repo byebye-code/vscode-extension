@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LoginViewProvider = void 0;
 const vscode = require("vscode");
+const api_1 = require("./utils/api");
+const encrypt_1 = require("./utils/encrypt");
 class LoginViewProvider {
     constructor(context) {
         this.context = context;
@@ -20,6 +22,12 @@ class LoginViewProvider {
             switch (data.type) {
                 case 'saveToken':
                     await this.saveToken(data.token);
+                    break;
+                case 'getCaptcha':
+                    await this.handleGetCaptcha();
+                    break;
+                case 'accountLogin':
+                    await this.handleAccountLogin(data.username, data.password, data.captchaCode, data.captchaUuid);
                     break;
             }
         });
@@ -64,388 +72,399 @@ class LoginViewProvider {
             }
         }
     }
+    /**
+     * 获取验证码
+     */
+    async handleGetCaptcha() {
+        try {
+            const captchaData = await (0, api_1.getCaptcha)();
+            if (this._view) {
+                this._view.webview.postMessage({
+                    type: 'captchaData',
+                    data: captchaData
+                });
+            }
+        }
+        catch (error) {
+            console.error('获取验证码失败:', error);
+            if (this._view) {
+                this._view.webview.postMessage({
+                    type: 'captchaError',
+                    message: error instanceof Error ? error.message : '获取验证码失败'
+                });
+            }
+        }
+    }
+    /**
+     * 处理账号密码登录
+     */
+    async handleAccountLogin(username, password, captchaCode, captchaUuid) {
+        try {
+            // 验证输入
+            if (!username || !password || !captchaCode) {
+                if (this._view) {
+                    this._view.webview.postMessage({
+                        type: 'loginError',
+                        message: '请填写完整的登录信息'
+                    });
+                }
+                return;
+            }
+            // 加密密码
+            const encryptedPassword = (0, encrypt_1.encryptData)(password);
+            if (!encryptedPassword) {
+                throw new Error('密码加密失败');
+            }
+            // 调用登录接口
+            const loginData = await (0, api_1.login)({
+                loginName: username,
+                password: encryptedPassword,
+                loginDevice: 1,
+                captchaCode: captchaCode,
+                captchaUuid: captchaUuid
+            });
+            // 保存token
+            await this._context.globalState.update('88code_token', loginData.token);
+            // 设置登录状态
+            await vscode.commands.executeCommand('setContext', '88code:loggedIn', true);
+            // 通知积分服务启动
+            await vscode.commands.executeCommand('88code.onLoginStatusChanged', true);
+            // 显示成功消息
+            vscode.window.showInformationMessage(`登录成功！欢迎 ${loginData.actualName || loginData.loginName}`);
+            // 通知前端登录成功
+            if (this._view) {
+                this._view.webview.postMessage({
+                    type: 'loginSuccess',
+                    data: loginData
+                });
+            }
+        }
+        catch (error) {
+            console.error('账号密码登录失败:', error);
+            if (this._view) {
+                this._view.webview.postMessage({
+                    type: 'loginError',
+                    message: error instanceof Error ? error.message : '登录失败，请检查用户名和密码'
+                });
+            }
+        }
+    }
     _getHtmlForWebview(webview) {
         return `<!DOCTYPE html>
-        <html lang="zh">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>88Code Token 登录</title>
-            <style>
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
-                }
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>88Code 登录</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-                body {
-                    font-family: var(--vscode-font-family);
-                    font-size: var(--vscode-font-size);
-                    color: var(--vscode-foreground);
-                    background-color: var(--vscode-editor-background);
-                    padding: 24px;
-                    line-height: 1.6;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-height: 100vh;
-                }
+        body {
+            font-family: var(--vscode-font-family);
+            font-size: var(--vscode-font-size);
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-editor-background);
+            padding: 20px 16px;
+            line-height: 1.6;
+        }
 
-                .login-container {
-                    max-width: 420px;
-                    width: 100%;
-                    position: relative;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 20px;
-                }
+        .login-container {
+            max-width: 400px;
+            margin: 0 auto;
+        }
 
-                /* MD3 主标题卡片 */
-                .header-card {
-                    background-color: var(--vscode-input-background);
-                    border-radius: 16px;
-                    padding: 32px 24px;
-                    position: relative;
-                    overflow: hidden;
-                    text-align: center;
-                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
-                }
+        /* 标题卡片 */
+        .header-card {
+            background-color: var(--vscode-input-background);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
 
-                .header-card::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(135deg, 
-                        rgba(var(--vscode-textLink-foreground), 0.05) 0%, 
-                        transparent 50%);
-                    pointer-events: none;
-                }
+        .header-title {
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
 
-                .logo-container {
-                    margin-bottom: 20px;
-                }
+        .header-subtitle {
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+        }
 
+        /* Tab 切换 */
+        .tab-container {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            background-color: var(--vscode-input-background);
+            padding: 4px;
+            border-radius: 8px;
+        }
 
-                .header-title {
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: var(--vscode-foreground);
-                    margin-bottom: 8px;
-                }
+        .tab-button {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--vscode-descriptionForeground);
+            transition: all 0.2s;
+        }
 
-                .header-subtitle {
-                    font-size: 14px;
-                    color: var(--vscode-descriptionForeground);
-                    opacity: 0.8;
-                }
+        .tab-button.active {
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
 
-                /* MD3 信息提示卡片 */
-                .info-card {
-                    background-color: var(--vscode-input-background);
-                    border-radius: 12px;
-                    padding: 20px;
-                    position: relative;
-                    overflow: hidden;
-                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
-                }
+        .tab-button:hover:not(.active) {
+            background-color: var(--vscode-button-hoverBackground);
+            opacity: 0.7;
+        }
 
-                .info-card::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(135deg, 
-                        rgba(var(--vscode-notificationsInfoIcon-foreground), 0.03) 0%, 
-                        transparent 50%);
-                    pointer-events: none;
-                }
+        /* 表单卡片 */
+        .form-card {
+            background-color: var(--vscode-input-background);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
 
-                .info-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    margin-bottom: 16px;
-                }
+        .form-section {
+            display: none;
+        }
 
+        .form-section.active {
+            display: block;
+        }
 
-                .info-title {
-                    font-size: 16px;
-                    font-weight: 500;
-                    color: var(--vscode-foreground);
-                }
+        .form-group {
+            margin-bottom: 16px;
+        }
 
-                .info-steps {
-                    list-style: none;
-                    padding: 0;
-                }
+        .input-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 13px;
+            font-weight: 500;
+        }
 
-                .info-steps li {
-                    padding: 6px 0;
-                    font-size: 14px;
-                    color: var(--vscode-descriptionForeground);
-                    position: relative;
-                    padding-left: 24px;
-                }
+        .md3-input,
+        .md3-textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--vscode-input-border);
+            background-color: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border-radius: 6px;
+            font-family: var(--vscode-font-family);
+            font-size: 13px;
+            transition: all 0.2s;
+            outline: none;
+        }
 
-                .info-steps li::before {
-                    content: counter(step-counter);
-                    counter-increment: step-counter;
-                    position: absolute;
-                    left: 0;
-                    top: 6px;
-                    background-color: var(--vscode-textLink-foreground);
-                    color: var(--vscode-button-foreground);
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 11px;
-                    font-weight: 600;
-                }
+        .md3-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
 
-                .info-steps {
-                    counter-reset: step-counter;
-                }
+        .md3-input:focus,
+        .md3-textarea:focus {
+            border-color: var(--vscode-focusBorder);
+            box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+        }
 
-                /* MD3 表单卡片 */
-                .form-card {
-                    background-color: var(--vscode-input-background);
-                    border-radius: 12px;
-                    padding: 24px;
-                    position: relative;
-                    overflow: hidden;
-                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
-                }
+        .captcha-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
 
-                .form-card::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(135deg, 
-                        rgba(var(--vscode-textLink-foreground), 0.02) 0%, 
-                        transparent 50%);
-                    pointer-events: none;
-                }
+        .captcha-input {
+            flex: 1;
+        }
 
-                .form-group {
-                    margin-bottom: 24px;
-                    position: relative;
-                }
+        .captcha-image {
+            width: 100px;
+            height: 38px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 1px solid var(--vscode-input-border);
+            object-fit: cover;
+        }
 
-                .input-label {
-                    display: block;
-                    margin-bottom: 12px;
-                    font-size: 14px;
-                    font-weight: 500;
-                    color: var(--vscode-foreground);
-                }
+        .help-text {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            margin-top: 6px;
+        }
 
-                .input-container {
-                    position: relative;
-                }
+        /* 按钮 */
+        .md3-button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
 
-                .md3-textarea {
-                    width: 100%;
-                    min-height: 100px;
-                    padding: 16px;
-                    border: 1px solid var(--vscode-input-border);
-                    background-color: var(--vscode-input-background);
-                    color: var(--vscode-input-foreground);
-                    border-radius: 8px;
-                    font-family: var(--vscode-font-family);
-                    font-size: var(--vscode-font-size);
-                    resize: vertical;
-                    transition: all 0.2s ease;
-                    outline: none;
-                }
+        .md3-button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
 
-                .md3-textarea:focus {
-                    border-color: var(--vscode-textLink-foreground);
-                    box-shadow: 0 0 0 2px rgba(var(--vscode-textLink-foreground), 0.1);
-                    transform: translateY(-1px);
-                }
+        .md3-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
-                .md3-textarea::placeholder {
-                    color: var(--vscode-input-placeholderForeground);
-                    opacity: 0.7;
-                }
+        /* 消息提示 */
+        .message-card {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+        }
 
-                .help-text {
-                    font-size: 12px;
-                    color: var(--vscode-descriptionForeground);
-                    margin-top: 8px;
-                    line-height: 1.5;
-                    opacity: 0.8;
-                }
+        .message-card.show {
+            display: block;
+        }
 
-                /* MD3 按钮 */
-                .md3-button {
-                    width: 100%;
-                    padding: 16px;
-                    background-color: var(--vscode-button-background);
-                    color: var(--vscode-button-foreground);
-                    border: none;
-                    border-radius: 24px;
-                    cursor: pointer;
-                    font-size: 16px;
-                    font-weight: 500;
-                    transition: all 0.2s ease;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    min-height: 48px;
-                    position: relative;
-                    overflow: hidden;
-                }
+        .success-message {
+            background-color: rgba(0, 200, 0, 0.1);
+            color: #00c800;
+            border: 1px solid rgba(0, 200, 0, 0.3);
+        }
 
-                .md3-button::before {
-                    content: '';
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
-                    transform: translateX(-100%);
-                    transition: transform 0.3s ease;
-                }
+        .error-message {
+            background-color: rgba(255, 0, 0, 0.1);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 0, 0, 0.3);
+        }
 
-                .md3-button:hover {
-                    background-color: var(--vscode-button-hoverBackground);
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                }
+        .loading {
+            text-align: center;
+            margin: 16px 0;
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+            display: none;
+        }
 
-                .md3-button:hover::before {
-                    transform: translateX(100%);
-                }
+        .loading.show {
+            display: block;
+        }
 
-                .md3-button:active {
-                    transform: translateY(0);
-                }
+        /* 信息提示卡片（仅Token模式） */
+        .info-card {
+            background-color: var(--vscode-input-background);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+        }
 
-                .md3-button:disabled {
-                    opacity: 0.6;
-                    cursor: not-allowed;
-                    transform: none;
-                    box-shadow: none;
-                }
+        .info-title {
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--vscode-foreground);
+        }
 
+        .info-steps {
+            list-style: decimal;
+            padding-left: 20px;
+        }
 
-                /* 状态消息 */
-                .message-card {
-                    margin-top: 20px;
-                    padding: 16px;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    display: none;
-                    align-items: center;
-                    gap: 12px;
-                }
+        .info-steps li {
+            padding: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <!-- 标题 -->
+        <div class="header-card">
+            <div class="header-title">88CODE 登录</div>
+            <div class="header-subtitle">连接您的创作世界</div>
+        </div>
 
-                .success-message {
-                    background-color: rgba(var(--vscode-testing-iconPassed), 0.1);
-                    color: var(--vscode-testing-iconPassed);
-                    border: 1px solid rgba(var(--vscode-testing-iconPassed), 0.2);
-                }
+        <!-- Tab 切换 -->
+        <div class="tab-container">
+            <button class="tab-button active" data-tab="account">账号密码登录</button>
+            <button class="tab-button" data-tab="token">Token 登录</button>
+        </div>
 
-                .error-message {
-                    background-color: rgba(var(--vscode-errorForeground), 0.1);
-                    color: var(--vscode-errorForeground);
-                    border: 1px solid rgba(var(--vscode-errorForeground), 0.2);
-                }
-
-                .loading {
-                    text-align: center;
-                    margin: 20px 0;
-                    color: var(--vscode-descriptionForeground);
-                    font-size: 14px;
-                }
-
-                .loading-spinner {
-                    animation: spin 1s linear infinite;
-                    margin-right: 8px;
-                    font-size: 16px;
-                }
-
-                @keyframes spin {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-
-                /* 响应式设计 */
-                @media (max-width: 480px) {
-                    body {
-                        padding: 16px;
-                    }
-                    
-                    .header-card {
-                        padding: 24px 20px;
-                        margin-bottom: 20px;
-                    }
-                    
-                    .header-title {
-                        font-size: 22px;
-                    }
-                    
-                    .form-card, .info-card {
-                        padding: 20px;
-                    }
-                    
-                    .md3-button {
-                        padding: 14px;
-                        font-size: 15px;
-                    }
-                }
-
-                /* VSCode 主题适配 */
-                @media (prefers-color-scheme: dark) {
-                    .header-card::before,
-                    .info-card::before,
-                    .form-card::before {
-                        background: linear-gradient(135deg, 
-                            rgba(255, 255, 255, 0.02) 0%, 
-                            transparent 50%);
-                    }
-                }
-
-                @media (prefers-color-scheme: light) {
-                    .header-card::before,
-                    .info-card::before,
-                    .form-card::before {
-                        background: linear-gradient(135deg, 
-                            rgba(0, 0, 0, 0.02) 0%, 
-                            transparent 50%);
-                    }
-                }
-            </style>
-        </head>
-        <body>
-            <div class="login-container">
-                <!-- MD3 主标题卡片 -->
-                <div class="header-card">
-                    <div class="logo-container">
-                        <div class="header-title">88CODE 登录</div>
-                        <div class="header-subtitle">连接您的创作世界</div>
+        <!-- 账号密码登录表单 -->
+        <div class="form-card">
+            <div id="accountSection" class="form-section active">
+                <form id="accountForm">
+                    <div class="form-group">
+                        <label for="username" class="input-label">用户名（邮箱）</label>
+                        <input
+                            type="email"
+                            id="username"
+                            class="md3-input"
+                            placeholder="请输入邮箱地址"
+                            required
+                        />
                     </div>
-                </div>
 
-                <!-- MD3 信息提示卡片 -->
+                    <div class="form-group">
+                        <label for="password" class="input-label">密码</label>
+                        <input
+                            type="password"
+                            id="password"
+                            class="md3-input"
+                            placeholder="请输入密码"
+                            required
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="captchaCode" class="input-label">验证码</label>
+                        <div class="captcha-container">
+                            <input
+                                type="text"
+                                id="captchaCode"
+                                class="md3-input captcha-input"
+                                placeholder="请输入验证码"
+                                required
+                            />
+                            <img
+                                id="captchaImage"
+                                class="captcha-image"
+                                alt="验证码"
+                                title="点击刷新"
+                            />
+                        </div>
+                        <div class="help-text">点击验证码图片可刷新</div>
+                    </div>
+
+                    <button type="submit" id="loginBtn" class="md3-button">
+                        登录
+                    </button>
+                </form>
+            </div>
+
+            <!-- Token 登录表单 -->
+            <div id="tokenSection" class="form-section">
                 <div class="info-card">
-                    <div class="info-header">
-                        <span class="info-title">如何获取 Token</span>
-                    </div>
+                    <div class="info-title">如何获取 Token</div>
                     <ol class="info-steps">
                         <li>访问 88Code 官网并正常登录</li>
                         <li>在浏览器开发者工具中查看网络请求</li>
@@ -454,154 +473,201 @@ class LoginViewProvider {
                     </ol>
                 </div>
 
-                <!-- MD3 表单卡片 -->
-                <div class="form-card">
-                    <form id="tokenForm">
-                        <div class="form-group">
-                            <label for="token" class="input-label">
-                                请输入您的 88Code Token
-                            </label>
-                            <div class="input-container">
-                                <textarea 
-                                    id="token" 
-                                    name="token" 
-                                    class="md3-textarea"
-                                    placeholder="请粘贴您的 88Code token..."
-                                    required
-                                ></textarea>
-                            </div>
-                            <div class="help-text">
-                                Token 通常是一个32位的长字符串，非JWT格式！
-                            </div>
+                <form id="tokenForm">
+                    <div class="form-group">
+                        <label for="token" class="input-label">请输入您的 88Code Token</label>
+                        <textarea
+                            id="token"
+                            class="md3-textarea"
+                            placeholder="请粘贴您的 88Code token..."
+                            required
+                        ></textarea>
+                        <div class="help-text">
+                            Token 通常是一个32位的长字符串，非JWT格式！
                         </div>
-                        
-                        <button type="submit" id="saveBtn" class="md3-button">
-                            保存 Token 并登录
-                        </button>
-                    </form>
-                    
-                    <!-- 状态消息 -->
-                    <div id="successMessage" class="message-card success-message">
-                        <span></span>
                     </div>
-                    <div id="errorMessage" class="message-card error-message">
-                        <span></span>
-                    </div>
-                    <div id="loading" class="loading" style="display: none;">
-                        正在验证 Token...
-                    </div>
-                </div>
+
+                    <button type="submit" id="saveBtn" class="md3-button">
+                        保存 Token 并登录
+                    </button>
+                </form>
             </div>
 
-            <script>
-                const vscode = acquireVsCodeApi();
+            <!-- 状态消息 -->
+            <div id="successMessage" class="message-card success-message"></div>
+            <div id="errorMessage" class="message-card error-message"></div>
+            <div id="loading" class="loading">正在处理...</div>
+        </div>
+    </div>
 
-                // Token 验证函数
-                function validateToken(token) {
-                    // 基本验证：检查token是否为空或过短
-                    if (!token || token.trim().length < 10) {
-                        return { valid: false, message: 'Token 不能为空且长度至少为10个字符' };
-                    }
-                    
-                    // 去除首尾空格
-                    token = token.trim();
-                    
-                    // 简单格式检查（可以根据实际token格式调整）
-                    if (token.length < 20) {
-                        return { valid: false, message: 'Token 长度过短，请检查是否完整' };
-                    }
-                    
-                    return { valid: true, message: 'Token 格式验证通过' };
+    <script>
+        const vscode = acquireVsCodeApi();
+        let captchaUuid = '';
+
+        // Tab 切换
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const tab = button.dataset.tab;
+
+                // 更新 tab 按钮状态
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+
+                // 切换表单显示
+                document.querySelectorAll('.form-section').forEach(section => section.classList.remove('active'));
+                document.getElementById(tab + 'Section').classList.add('active');
+
+                // 清除消息
+                clearMessages();
+
+                // 如果切换到账号密码登录，获取验证码
+                if (tab === 'account') {
+                    getCaptcha();
                 }
+            });
+        });
 
-                // 页面加载完成后设置事件监听
-                window.addEventListener('load', () => {
-                    const tokenForm = document.getElementById('tokenForm');
-                    const tokenInput = document.getElementById('token');
-                    
-                    // 为表单添加提交事件监听
-                    tokenForm.addEventListener('submit', handleTokenSubmit);
-                    
-                    // 为token输入框添加实时验证
-                    tokenInput.addEventListener('input', () => {
-                        const errorMessage = document.getElementById('errorMessage');
-                        const successMessage = document.getElementById('successMessage');
-                        
-                        // 清除之前的消息
-                        errorMessage.style.display = 'none';
-                        successMessage.style.display = 'none';
-                    });
-                });
+        // 页面加载时获取验证码
+        window.addEventListener('load', () => {
+            getCaptcha();
 
-                // 处理Token表单提交
-                function handleTokenSubmit(e) {
-                    e.preventDefault();
-                    
-                    const saveBtn = document.getElementById('saveBtn');
-                    const loading = document.getElementById('loading');
-                    const errorMessage = document.getElementById('errorMessage');
-                    const successMessage = document.getElementById('successMessage');
-                    const tokenInput = document.getElementById('token');
-                    
-                    // 重置状态
-                    saveBtn.disabled = true;
-                    loading.style.display = 'block';
-                    errorMessage.style.display = 'none';
-                    successMessage.style.display = 'none';
-                    
-                    const token = tokenInput.value.trim();
-                    
-                    // 验证Token
-                    const validation = validateToken(token);
-                    if (!validation.valid) {
-                        loading.style.display = 'none';
-                        saveBtn.disabled = false;
-                        const errorText = errorMessage.querySelector('span');
-                        errorText.textContent = validation.message;
-                        errorMessage.style.display = 'flex';
-                        return;
-                    }
-                    
-                    // 发送Token到扩展
-                    vscode.postMessage({
-                        type: 'saveToken',
-                        token: token
-                    });
-                }
+            // 验证码图片点击刷新
+            document.getElementById('captchaImage').addEventListener('click', getCaptcha);
 
-                // 监听来自扩展的消息
-                window.addEventListener('message', event => {
-                    const message = event.data;
-                    const loading = document.getElementById('loading');
-                    const saveBtn = document.getElementById('saveBtn');
-                    const errorMessage = document.getElementById('errorMessage');
-                    const successMessage = document.getElementById('successMessage');
-                    
-                    switch (message.type) {
-                        case 'tokenSaveSuccess':
-                            loading.style.display = 'none';
-                            const successText = successMessage.querySelector('span');
-                            successText.textContent = 'Token 保存成功！正在跳转到仪表盘...';
-                            successMessage.style.display = 'flex';
-                            
-                            // 2秒后自动隐藏成功消息
-                            setTimeout(() => {
-                                successMessage.style.display = 'none';
-                            }, 2000);
-                            break;
-                            
-                        case 'tokenSaveError':
-                            loading.style.display = 'none';
-                            saveBtn.disabled = false;
-                            const errorText = errorMessage.querySelector('span');
-                            errorText.textContent = message.message || 'Token 保存失败，请重试';
-                            errorMessage.style.display = 'flex';
-                            break;
-                    }
-                });
-            </script>
-        </body>
-        </html>`;
+            // 表单提交事件
+            document.getElementById('accountForm').addEventListener('submit', handleAccountLogin);
+            document.getElementById('tokenForm').addEventListener('submit', handleTokenSubmit);
+        });
+
+        // 获取验证码
+        function getCaptcha() {
+            vscode.postMessage({ type: 'getCaptcha' });
+        }
+
+        // 账号密码登录
+        function handleAccountLogin(e) {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const captchaCode = document.getElementById('captchaCode').value.trim();
+
+            if (!username || !password || !captchaCode) {
+                showError('请填写完整的登录信息');
+                return;
+            }
+
+            if (!captchaUuid) {
+                showError('验证码未加载，请刷新后重试');
+                return;
+            }
+
+            setLoading(true);
+            document.getElementById('loginBtn').disabled = true;
+
+            vscode.postMessage({
+                type: 'accountLogin',
+                username,
+                password,
+                captchaCode,
+                captchaUuid
+            });
+        }
+
+        // Token 登录
+        function handleTokenSubmit(e) {
+            e.preventDefault();
+
+            const token = document.getElementById('token').value.trim();
+
+            if (!token || token.length < 10) {
+                showError('Token 不能为空且长度至少为10个字符');
+                return;
+            }
+
+            setLoading(true);
+            document.getElementById('saveBtn').disabled = true;
+
+            vscode.postMessage({
+                type: 'saveToken',
+                token
+            });
+        }
+
+        // 监听来自扩展的消息
+        window.addEventListener('message', event => {
+            const message = event.data;
+
+            switch (message.type) {
+                case 'captchaData':
+                    captchaUuid = message.data.captchaUuid;
+                    document.getElementById('captchaImage').src = message.data.captchaBase64Image;
+                    break;
+
+                case 'captchaError':
+                    showError(message.message || '获取验证码失败');
+                    break;
+
+                case 'loginSuccess':
+                    setLoading(false);
+                    showSuccess('登录成功！欢迎使用 88Code');
+                    setTimeout(() => {
+                        document.getElementById('captchaCode').value = '';
+                    }, 1000);
+                    break;
+
+                case 'loginError':
+                    setLoading(false);
+                    document.getElementById('loginBtn').disabled = false;
+                    showError(message.message || '登录失败');
+                    getCaptcha(); // 刷新验证码
+                    break;
+
+                case 'tokenSaveSuccess':
+                    setLoading(false);
+                    showSuccess('Token 保存成功！88Code 插件已准备就绪');
+                    break;
+
+                case 'tokenSaveError':
+                    setLoading(false);
+                    document.getElementById('saveBtn').disabled = false;
+                    showError(message.message || 'Token 保存失败');
+                    break;
+            }
+        });
+
+        // 工具函数
+        function showSuccess(msg) {
+            clearMessages();
+            const el = document.getElementById('successMessage');
+            el.textContent = msg;
+            el.classList.add('show');
+        }
+
+        function showError(msg) {
+            clearMessages();
+            const el = document.getElementById('errorMessage');
+            el.textContent = msg;
+            el.classList.add('show');
+        }
+
+        function setLoading(show) {
+            const el = document.getElementById('loading');
+            if (show) {
+                el.classList.add('show');
+            } else {
+                el.classList.remove('show');
+            }
+        }
+
+        function clearMessages() {
+            document.getElementById('successMessage').classList.remove('show');
+            document.getElementById('errorMessage').classList.remove('show');
+            document.getElementById('loading').classList.remove('show');
+        }
+    </script>
+</body>
+</html>`;
     }
 }
 exports.LoginViewProvider = LoginViewProvider;

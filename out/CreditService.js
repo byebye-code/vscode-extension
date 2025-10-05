@@ -104,7 +104,12 @@ class CreditService {
         try {
             const token = this._context.globalState.get('88code_token');
             if (!token) {
-                throw new Error('未找到登录令牌');
+                // 未登录时直接返回，不抛出错误
+                return;
+            }
+            // 再次检查定时器是否已停止（避免退出登录后的竞态条件）
+            if (!this._refreshTimer) {
+                return;
             }
             const response = await this.httpRequestWithAuth('GET', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my/credit-history?pageNum=1&pageSize=20', token);
             if (response.ok && response.data && response.data.list && response.data.list.length > 0) {
@@ -242,6 +247,10 @@ class CreditService {
         try {
             const token = this._context.globalState.get('88code_token');
             if (!token) {
+                return;
+            }
+            // 检查定时器是否已停止（避免退出登录后的竞态条件）
+            if (!this._subscriptionRefreshTimer) {
                 return;
             }
             const response = await this.httpRequestWithAuth('GET', 'https://claude.nonocode.cn/admin-api/cc-admin/system/subscription/my', token);

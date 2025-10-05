@@ -127,7 +127,13 @@ export class CreditService {
         try {
             const token = this._context.globalState.get('88code_token') as string;
             if (!token) {
-                throw new Error('未找到登录令牌');
+                // 未登录时直接返回，不抛出错误
+                return;
+            }
+
+            // 再次检查定时器是否已停止（避免退出登录后的竞态条件）
+            if (!this._refreshTimer) {
+                return;
             }
 
             const response = await this.httpRequestWithAuth(
@@ -139,7 +145,7 @@ export class CreditService {
             if (response.ok && response.data && response.data.list && response.data.list.length > 0) {
                 const remainingCredits = response.data.list[0].remainingCredits;
                 this.updateStatusBarDisplay(remainingCredits);
-                
+
                 // 缓存余额数据
                 await this._context.globalState.update('88code_cached_credits', {
                     credits: remainingCredits,
@@ -280,6 +286,11 @@ export class CreditService {
         try {
             const token = this._context.globalState.get('88code_token') as string;
             if (!token) {
+                return;
+            }
+
+            // 检查定时器是否已停止（避免退出登录后的竞态条件）
+            if (!this._subscriptionRefreshTimer) {
                 return;
             }
 
