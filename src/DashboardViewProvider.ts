@@ -49,6 +49,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         this.startPeriodicRefresh();
     }
 
+    public async refresh() {
+        await this.loadDashboard();
+    }
+
     private async loadDashboard() {
         try {
             const token = this._context.globalState.get('88code_token') as string;
@@ -171,7 +175,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>88CODE 仪表盘</title>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
+                .icon {
+                    margin-right: 6px;
+                }
                 * {
                     margin: 0;
                     padding: 0;
@@ -614,7 +622,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                         </div>
                         <div class="credit-actions">
                             <button id="resetCreditsBtn" class="md3-button credit-reset-btn">
-                                <span class="button-icon">🔄</span>
+                                <span class="button-icon"><i class="fas fa-sync"></i></span>
                                 重置余额
                             </button>
                         </div>

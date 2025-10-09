@@ -71,7 +71,11 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>88CODE 设置</title>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
+                .icon {
+                    margin-right: 6px;
+                }
                 * {
                     margin: 0;
                     padding: 0;
@@ -205,7 +209,7 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <div class="settings-container">
-                <div class="settings-title">⚙️ 状态栏设置</div>
+                <div class="settings-title"><i class="fas fa-cog icon"></i>状态栏设置</div>
 
                 <div class="setting-group">
                     <label class="setting-label">前缀文字</label>
@@ -240,8 +244,16 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                     <span class="setting-description">余额增加时显示变化金额（绿色）</span>
                 </div>
 
+                <div class="setting-group">
+                    <label class="setting-checkbox">
+                        <input type="checkbox" id="showStatusBarTotal" />
+                        <span>状态栏显示总金额</span>
+                    </label>
+                    <span class="setting-description">在状态栏显示所有套餐的总余额（勾选后显示总和，不勾选则显示当前套餐余额）</span>
+                </div>
+
                 <button id="saveBtn" class="save-button">
-                    💾 保存设置
+                    <i class="fas fa-save icon"></i>保存设置
                 </button>
             </div>
 
@@ -252,6 +264,7 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                 const suffixInput = document.getElementById('suffixText');
                 const showDecreaseCheckbox = document.getElementById('showDecrease');
                 const showIncreaseCheckbox = document.getElementById('showIncrease');
+                const showStatusBarTotalCheckbox = document.getElementById('showStatusBarTotal');
                 const previewText = document.getElementById('previewText');
                 const saveBtn = document.getElementById('saveBtn');
 
@@ -272,7 +285,8 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                         prefixText: prefixInput.value,
                         suffixText: suffixInput.value,
                         showDecrease: showDecreaseCheckbox.checked,
-                        showIncrease: showIncreaseCheckbox.checked
+                        showIncrease: showIncreaseCheckbox.checked,
+                        showStatusBarTotal: showStatusBarTotalCheckbox.checked
                     };
 
                     vscode.postMessage({
@@ -291,6 +305,7 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                             suffixInput.value = settings.suffixText || '';
                             showDecreaseCheckbox.checked = settings.showDecrease !== false;
                             showIncreaseCheckbox.checked = settings.showIncrease !== false;
+                            showStatusBarTotalCheckbox.checked = settings.showStatusBarTotal === true;
                             updatePreview();
                         }
                     }

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as https from 'https';
 import { URL } from 'url';
+import { SubscriptionViewProvider } from './SubscriptionViewProvider';
 
 export class CreditService {
     private _context: vscode.ExtensionContext;
@@ -11,16 +12,19 @@ export class CreditService {
     private _previousCredits?: number; // 存储上一次的余额
     private _hideChangeTimer?: NodeJS.Timeout; // 隐藏变化提示的定时器
     private _subscriptionData: any = null; // 存储订阅信息
-    private _subscriptionPanel?: vscode.WebviewPanel; // 订阅信息面板
+    private _subscriptionPanel?: vscode.WebviewPanel; // 订阅信息面板（保留用于全屏查看）
+    private _subscriptionViewProvider: SubscriptionViewProvider; // 订阅视图提供者
     private _settings: any = {
         prefixText: '剩余余额: ',
         suffixText: '',
         showDecrease: true,
-        showIncrease: true
+        showIncrease: true,
+        showStatusBarTotal: false
     }; // 用户自定义设置
 
-    constructor(context: vscode.ExtensionContext) {
+    constructor(context: vscode.ExtensionContext, subscriptionViewProvider: SubscriptionViewProvider) {
         this._context = context;
+        this._subscriptionViewProvider = subscriptionViewProvider;
 
         // 加载用户设置
         this.loadSettings();
@@ -31,8 +35,11 @@ export class CreditService {
             100
         );
 
-        // 设置命令，点击时显示订阅信息面板
-        this._statusBarItem.command = '88code.showSubscriptionInfo';
+        // 设置命令，点击时打开订阅详情侧边栏
+        this._statusBarItem.command = {
+            command: 'workbench.view.extension.code88-panel',
+            title: '打开订阅详情'
+        };
         this._statusBarItem.tooltip = new vscode.MarkdownString('**点击查看订阅详情**\n\n加载订阅信息中...');
         this._statusBarItem.tooltip.supportHtml = true;
 
@@ -50,7 +57,8 @@ export class CreditService {
                 prefixText: savedSettings.prefixText || '剩余余额: ',
                 suffixText: savedSettings.suffixText || '',
                 showDecrease: savedSettings.showDecrease !== false,
-                showIncrease: savedSettings.showIncrease !== false
+                showIncrease: savedSettings.showIncrease !== false,
+                showStatusBarTotal: savedSettings.showStatusBarTotal === true
             };
         }
     }
@@ -60,7 +68,8 @@ export class CreditService {
             prefixText: settings.prefixText || '剩余余额: ',
             suffixText: settings.suffixText || '',
             showDecrease: settings.showDecrease !== false,
-            showIncrease: settings.showIncrease !== false
+            showIncrease: settings.showIncrease !== false,
+            showStatusBarTotal: settings.showStatusBarTotal === true
         };
 
         // 重新显示余额
@@ -254,14 +263,28 @@ export class CreditService {
 
     private updateStatusBarDisplay(credits?: number, isCached: boolean = false) {
         if (credits !== undefined) {
+            // 如果启用了显示总金额，计算所有套餐的总余额
+            let displayCredits = credits;
+            if (this._settings.showStatusBarTotal && this._subscriptionData && Array.isArray(this._subscriptionData)) {
+                const activeSubscriptions = this._subscriptionData.filter((sub: any) =>
+                    sub.subscriptionStatus === '活跃中'
+                );
+                
+                if (activeSubscriptions.length > 0) {
+                    displayCredits = activeSubscriptions.reduce((total: number, sub: any) => {
+                        return total + (sub.currentCredits || 0);
+                    }, 0);
+                }
+            }
+
             const cacheIndicator = isCached ? ' (缓存)' : '';
 
             // 计算余额变化
             let changeText = '';
             let flashColor: vscode.ThemeColor | undefined = undefined;
 
-            if (this._previousCredits !== undefined && this._previousCredits !== credits) {
-                const change = credits - this._previousCredits;
+            if (this._previousCredits !== undefined && this._previousCredits !== displayCredits) {
+                const change = displayCredits - this._previousCredits;
                 if (change < 0 && this._settings.showDecrease) {
                     // 余额减少：显示负值，橙色闪烁（如果用户启用）
                     changeText = ` (${change})`;
@@ -278,7 +301,7 @@ export class CreditService {
             const suffix = this._settings.suffixText || '';
 
             // 显示完整的美元金额，包含变化提示
-            this._statusBarItem.text = `$(credit-card) ${prefix}$${credits}${changeText}${suffix}${cacheIndicator}`;
+            this._statusBarItem.text = `$(credit-card) ${prefix}$${displayCredits}${changeText}${suffix}${cacheIndicator}`;
             
             // 如果有变化，设置闪烁背景色
             if (flashColor) {
@@ -291,21 +314,21 @@ export class CreditService {
 
                 // 1秒后隐藏变化提示并恢复正常背景色
                 this._hideChangeTimer = setTimeout(() => {
-                    this.updateStatusBarDisplayWithoutChange(credits, isCached);
+                    this.updateStatusBarDisplayWithoutChange(displayCredits, isCached);
                 }, 1000);
             } else {
                 // 没有变化时，根据余额数量设置背景色（美元单位）
-                if (credits >= 0.5) {
+                if (displayCredits >= 0.5) {
                     this._statusBarItem.backgroundColor = undefined; // 默认背景
-                } else if (credits >= 0 && credits < 0.5) {
+                } else if (displayCredits >= 0 && displayCredits < 0.5) {
                     this._statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground'); // 红色背景
-                } else if (credits < 0) {
+                } else if (displayCredits < 0) {
                     this._statusBarItem.backgroundColor = new vscode.ThemeColor('statusBar.debuggingBackground'); // 灰色背景
                 }
             }
 
             // 保存当前余额用于下次比较
-            this._previousCredits = credits;
+            this._previousCredits = displayCredits;
         } else {
             this._statusBarItem.text = '$(credit-card) 余额加载中...';
             this._statusBarItem.tooltip = '正在获取剩余余额信息...';
@@ -314,6 +337,20 @@ export class CreditService {
     }
 
     private updateStatusBarDisplayWithoutChange(credits: number, isCached: boolean = false) {
+        // 如果启用了显示总金额，计算所有套餐的总余额
+        let displayCredits = credits;
+        if (this._settings.showStatusBarTotal && this._subscriptionData && Array.isArray(this._subscriptionData)) {
+            const activeSubscriptions = this._subscriptionData.filter((sub: any) =>
+                sub.subscriptionStatus === '活跃中'
+            );
+            
+            if (activeSubscriptions.length > 0) {
+                displayCredits = activeSubscriptions.reduce((total: number, sub: any) => {
+                    return total + (sub.currentCredits || 0);
+                }, 0);
+            }
+        }
+
         const cacheIndicator = isCached ? ' (缓存)' : '';
 
         // 使用用户自定义的前缀和后缀
@@ -321,14 +358,14 @@ export class CreditService {
         const suffix = this._settings.suffixText || '';
 
         // 显示完整的美元金额，不包含变化提示
-        this._statusBarItem.text = `$(credit-card) ${prefix}$${credits}${suffix}${cacheIndicator}`;
+        this._statusBarItem.text = `$(credit-card) ${prefix}$${displayCredits}${suffix}${cacheIndicator}`;
         
         // 根据余额数量设置背景色（美元单位）
-        if (credits >= 0.5) {
+        if (displayCredits >= 0.5) {
             this._statusBarItem.backgroundColor = undefined; // 默认背景
-        } else if (credits >= 0 && credits < 0.5) {
+        } else if (displayCredits >= 0 && displayCredits < 0.5) {
             this._statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground'); // 红色背景
-        } else if (credits < 0) {
+        } else if (displayCredits < 0) {
             this._statusBarItem.backgroundColor = new vscode.ThemeColor('statusBar.debuggingBackground'); // 灰色背景
         }
     }
@@ -380,6 +417,9 @@ export class CreditService {
 
             if (response.ok && response.data && Array.isArray(response.data)) {
                 this._subscriptionData = response.data;
+                // 更新订阅视图中的订阅数据
+                this._subscriptionViewProvider.updateSubscriptionData(response.data);
+                // 更新tooltip
                 this.updateTooltip();
             }
         } catch (error) {
@@ -412,333 +452,88 @@ export class CreditService {
         );
 
         if (activeSubscriptions.length === 0) {
-            const tooltip = new vscode.MarkdownString('**点击刷新剩余余额**\n\n暂无活跃订阅');
-            tooltip.supportHtml = true;
-            this._statusBarItem.tooltip = tooltip;
+            this._statusBarItem.tooltip = '● 点击刷新余额信息\n\n暂无活跃订阅';
             return;
         }
 
-        // CSS 样式定义
-        const styles = `
-            <style>
-                .subscription-tooltip {
-                    padding: 12px;
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-                    max-width: 400px;
-                }
-
-                .tooltip-header {
-                    margin: 0 0 16px 0;
-                    padding-bottom: 12px;
-                    border-bottom: 2px solid #555;
-                    font-size: 15px;
-                    font-weight: 600;
-                    color: #fff;
-                }
-
-                .subscription-divider {
-                    height: 2px;
-                    background: linear-gradient(to right, transparent, #888, transparent);
-                    margin: 24px 0;
-                    border-radius: 1px;
-                }
-
-                .subscription-item {
-                    margin-bottom: 16px;
-                }
-
-                .plan-header {
-                    margin: 12px 0 8px 0;
-                    padding: 12px;
-                    background: linear-gradient(135deg, #2d2d2d 0%, #252525 100%);
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: 600;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-                }
-
-                .plan-header.status-low { border-left: 4px solid #E74C3C; }
-                .plan-header.status-normal { border-left: 4px solid #0078D4; }
-                .plan-header.status-high { border-left: 4px solid #2ECC71; }
-
-                .subscription-table {
-                    width: 100%;
-                    border-collapse: separate;
-                    border-spacing: 0;
-                    font-size: 13px;
-                    margin-top: 8px;
-                    background: #252525;
-                    border-radius: 6px;
-                    overflow: hidden;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-                }
-
-                .subscription-table thead tr {
-                    background: linear-gradient(180deg, #3a3a3a 0%, #333 100%);
-                }
-
-                .subscription-table th {
-                    padding: 10px 12px;
-                    font-weight: 600;
-                    color: #fff;
-                    border-bottom: 2px solid #444;
-                }
-
-                .subscription-table th:first-child {
-                    text-align: left;
-                    width: 40%;
-                }
-
-                .subscription-table th:last-child {
-                    text-align: right;
-                }
-
-                .subscription-table tbody tr {
-                    transition: background-color 0.2s ease;
-                }
-
-                .subscription-table tbody tr:hover {
-                    background: #2a2a2a;
-                }
-
-                .subscription-table tbody tr:not(:last-child) {
-                    border-bottom: 1px solid #333;
-                }
-
-                .subscription-table td {
-                    padding: 10px 12px;
-                    color: #ddd;
-                }
-
-                .subscription-table td:first-child {
-                    text-align: left;
-                    color: #fff;
-                }
-
-                .subscription-table td:last-child {
-                    text-align: right;
-                }
-
-                .progress-row {
-                    background: linear-gradient(180deg, #2d2d2d 0%, #2a2a2a 100%) !important;
-                }
-
-                .progress-row td {
-                    padding: 14px 12px !important;
-                }
-
-                .progress-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    margin-bottom: 8px;
-                }
-
-                .progress-title {
-                    font-size: 13px;
-                    font-weight: 600;
-                    color: #fff;
-                }
-
-                .progress-status {
-                    font-size: 11px;
-                    color: #999;
-                    padding: 2px 8px;
-                    background: rgba(255,255,255,0.05);
-                    border-radius: 10px;
-                }
-
-                .progress-bar-container {
-                    position: relative;
-                    height: 28px;
-                    background: #1a1a1a;
-                    border-radius: 14px;
-                    overflow: hidden;
-                    border: 1px solid #444;
-                    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
-                }
-
-                .progress-bar-fill {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    height: 100%;
-                    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-                    border-radius: 14px 0 0 14px;
-                }
-
-                .progress-bar-fill.full {
-                    border-radius: 14px;
-                }
-
-                .progress-bar-fill.color-low {
-                    background: linear-gradient(90deg, #E74C3C 0%, #C0392B 100%);
-                    box-shadow: 0 0 15px rgba(231, 76, 60, 0.6);
-                }
-
-                .progress-bar-fill.color-normal {
-                    background: linear-gradient(90deg, #0078D4 0%, #005A9E 100%);
-                    box-shadow: 0 0 15px rgba(0, 120, 212, 0.6);
-                }
-
-                .progress-bar-fill.color-high {
-                    background: linear-gradient(90deg, #2ECC71 0%, #27AE60 100%);
-                    box-shadow: 0 0 15px rgba(46, 204, 113, 0.6);
-                }
-
-                .progress-bar-text {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    height: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-weight: 700;
-                    font-size: 12px;
-                    color: #fff;
-                    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-                    letter-spacing: 0.3px;
-                }
-
-                .highlight-value {
-                    font-weight: 700;
-                    color: #FFA500;
-                }
-
-                .speed-value {
-                    color: #3498DB;
-                    font-weight: 600;
-                }
-
-                .tooltip-footer {
-                    margin-top: 16px;
-                    padding: 10px;
-                    background: linear-gradient(135deg, #2d2d2d 0%, #252525 100%);
-                    border-radius: 6px;
-                    text-align: center;
-                    font-size: 11px;
-                    color: #999;
-                    border: 1px dashed #444;
-                }
-            </style>
-        `;
-
-        // 构建 HTML 内容
-        let content = styles + '<div class="subscription-tooltip">';
-        content += '<h3 class="tooltip-header">📊 订阅信息详情</h3>';
-
+        // 构建详细的 tooltip 内容（使用 HTML + 内联样式美化）
+        let tooltipLines = ['<div style="font-family: sans-serif; line-height: 1.6;">'];
+        
+        // 标题
+        tooltipLines.push('<div style="font-size: 14px; font-weight: bold; color: #4EC9B0; margin-bottom: 8px;">📊 订阅信息详览</div>');
+        
+        // 计算总额度
+        let totalCredits = 0;
+        let totalLimit = 0;
+        
         activeSubscriptions.forEach((sub: any, index: number) => {
-            // 在每个订阅之间添加分割线
-            if (index > 0) {
-                content += '<div class="subscription-divider"></div>';
-            }
-
             const plan = sub.subscriptionPlan || {};
             const currentCredits = sub.currentCredits || 0;
-            const creditLimit = plan.creditLimit || 1; // 避免除以0
-            const percentage = (currentCredits / creditLimit) * 100;
-
-            // 根据百分比确定进度条颜色和状态
-            let statusClass = 'status-normal';
-            let colorClass = 'color-normal';
-            let progressStatus = '📈 额度正常';
-
-            if (percentage < 5) {
-                statusClass = 'status-low';
-                colorClass = 'color-low';
-                progressStatus = '⚠️ 额度不足';
-            } else if (percentage > 80) {
-                statusClass = 'status-high';
-                colorClass = 'color-high';
-                progressStatus = '✅ 额度充足';
+            const creditLimit = plan.creditLimit || 1;
+            const percentage = ((currentCredits / creditLimit) * 100).toFixed(1);
+            
+            totalCredits += currentCredits;
+            totalLimit += creditLimit;
+            
+            // 状态图标和颜色
+            let statusIcon = '●';
+            let statusColor = '#D4D4D4';
+            if (parseFloat(percentage) < 5) {
+                statusIcon = '⚠';
+                statusColor = '#F48771';
+            } else if (parseFloat(percentage) > 80) {
+                statusIcon = '✓';
+                statusColor = '#4EC9B0';
             }
-
-            const isFull = percentage >= 99.9;
-
-            // 套餐标题
-            content += '<div class="subscription-item">';
-            content += '<div class="plan-header ' + statusClass + '">';
-            content += '🎯 ' + (sub.subscriptionPlanName || '未知套餐');
-            content += '</div>';
-
-            // 表格开始
-            content += '<table class="subscription-table">';
-
-            // 表头
-            content += '<thead><tr>';
-            content += '<th>项目</th>';
-            content += '<th>详情</th>';
-            content += '</tr></thead>';
-
-            // 表体
-            content += '<tbody>';
-
-            // 费用行
-            content += '<tr>';
-            content += '<td><strong>💰 费用</strong></td>';
-            content += '<td>¥' + (sub.cost || 0) + '</td>';
-            content += '</tr>';
-
-            // 计费周期行
-            content += '<tr>';
-            content += '<td><strong>🔄 计费周期</strong></td>';
-            content += '<td>' + (sub.billingCycleDesc || sub.billingCycle || '-') + '</td>';
-            content += '</tr>';
-
-            // 剩余天数行
-            content += '<tr>';
-            content += '<td><strong>⏰ 剩余天数</strong></td>';
-            content += '<td><span class="highlight-value">' + (sub.remainingDays || 0) + ' 天</span></td>';
-            content += '</tr>';
-
-            // 额度进度条行
-            content += '<tr class="progress-row">';
-            content += '<td colspan="2">';
-            content += '<div class="progress-header">';
-            content += '<span class="progress-title">💎 额度使用情况</span>';
-            content += '<span class="progress-status">' + progressStatus + '</span>';
-            content += '</div>';
-
-            // 进度条
-            content += '<div class="progress-bar-container">';
-            content += '<div class="progress-bar-fill ' + colorClass + (isFull ? ' full' : '') + '" style="width:' + Math.min(percentage, 100).toFixed(1) + '%"></div>';
-            content += '<div class="progress-bar-text">';
-            content += '$' + currentCredits.toFixed(2) + ' / $' + creditLimit.toFixed(2) + ' (' + percentage.toFixed(1) + '%)';
-            content += '</div>';
-            content += '</div>';
-            content += '</td>';
-            content += '</tr>';
-
-            // 恢复速度行
-            content += '<tr>';
-            content += '<td><strong>⚡ 恢复速度</strong></td>';
-            content += '<td><span class="speed-value">$' + (plan.creditsPerHour || 0) + '</span> / 小时</td>';
-            content += '</tr>';
-
-            // 开始时间行
-            content += '<tr>';
-            content += '<td><strong>🕐 开始时间</strong></td>';
-            content += '<td>' + (sub.startDate || '-') + '</td>';
-            content += '</tr>';
-
-            // 到期时间行（移除红色样式）
-            content += '<tr>';
-            content += '<td><strong>⏳ 到期时间</strong></td>';
-            content += '<td>' + (sub.endDate || '-') + '</td>';
-            content += '</tr>';
-
-            content += '</tbody>';
-            content += '</table>';
-            content += '</div>';
+            
+            if (index > 0) {
+                tooltipLines.push('<div style="height: 1px; background-color: #444; margin: 12px 0;"></div>');
+            }
+            
+            // 订阅标题
+            tooltipLines.push(`<div style="font-size: 13px; font-weight: bold; color: ${statusColor}; margin: 8px 0 6px 0;">${statusIcon} ${sub.subscriptionPlanName || '未知套餐'}</div>`);
+            
+            // 基本信息组
+            tooltipLines.push('<div style="margin-left: 8px; color: #CCCCCC;">');
+            tooltipLines.push(`<div style="margin: 4px 0;">💰 <span style="color: #DCDCAA;">费用:</span> <span style="font-weight: 500;">¥${sub.cost || 0}</span></div>`);
+            tooltipLines.push(`<div style="margin: 4px 0;">🔄 <span style="color: #DCDCAA;">周期:</span> <span style="font-weight: 500;">${sub.billingCycleDesc || sub.billingCycle || '-'}</span></div>`);
+            tooltipLines.push(`<div style="margin: 4px 0;">⏱ <span style="color: #DCDCAA;">剩余:</span> <span style="font-weight: 500;">${sub.remainingDays || 0} 天</span></div>`);
+            tooltipLines.push('</div>');
+            
+            // 额度信息组（单独分隔）
+            tooltipLines.push('<div style="height: 1px; background-color: #333; margin: 8px 0 8px 8px;"></div>');
+            tooltipLines.push('<div style="margin-left: 8px;">');
+            
+            // 额度进度条颜色
+            let progressColor = '#4EC9B0';
+            if (parseFloat(percentage) < 20) {
+                progressColor = '#F48771';
+            } else if (parseFloat(percentage) < 50) {
+                progressColor = '#CE9178';
+            }
+            
+            tooltipLines.push(`<div style="margin: 4px 0;">💎 <span style="color: #569CD6;">额度:</span> <span style="font-weight: bold; color: ${progressColor};">$${currentCredits}</span> / <span style="color: #888;">$${creditLimit}</span> <span style="color: ${progressColor};">(${percentage}%)</span></div>`);
+            tooltipLines.push(`<div style="margin: 4px 0;">⚡ <span style="color: #569CD6;">恢复:</span> <span style="font-weight: 500; color: #4EC9B0;">$${plan.creditsPerHour || 0}/小时</span></div>`);
+            tooltipLines.push('</div>');
         });
 
-        // 底部提示
-        content += '<div class="tooltip-footer">💡 点击状态栏可刷新数据</div>';
-        content += '</div>';
+        // 总计信息
+        const totalPercentage = totalLimit > 0 ? ((totalCredits / totalLimit) * 100).toFixed(1) : '0.0';
+        let totalColor = '#4EC9B0';
+        if (parseFloat(totalPercentage) < 20) {
+            totalColor = '#F48771';
+        } else if (parseFloat(totalPercentage) < 50) {
+            totalColor = '#CE9178';
+        }
+        
+        tooltipLines.push('<div style="height: 2px; background-color: #4EC9B0; margin: 12px 0 8px 0;"></div>');
+        tooltipLines.push('<div style="padding-top: 4px;">');
+        tooltipLines.push(`<div style="font-weight: bold; color: #4EC9B0; margin-bottom: 4px;">📦 总计: ${activeSubscriptions.length} 个活跃订阅</div>`);
+        tooltipLines.push(`<div style="font-weight: bold;">💎 <span style="color: #569CD6;">总额度:</span> <span style="color: ${totalColor};">$${totalCredits}</span> / <span style="color: #888;">$${totalLimit}</span> <span style="color: ${totalColor};">(${totalPercentage}%)</span></div>`);
+        tooltipLines.push('</div>');
+        tooltipLines.push('</div>');
 
-        const tooltip = new vscode.MarkdownString(content);
+        const tooltip = new vscode.MarkdownString(tooltipLines.join(''));
         tooltip.supportHtml = true;
         tooltip.isTrusted = true;
         this._statusBarItem.tooltip = tooltip;
@@ -793,11 +588,16 @@ export class CreditService {
     private getSubscriptionPanelHtml(activeSubscriptions: any[]): string {
         // CSS 样式定义
         const styles = `
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
                 * {
                     margin: 0;
                     padding: 0;
                     box-sizing: border-box;
+                }
+                
+                .icon {
+                    margin-right: 6px;
                 }
 
                 body {
@@ -815,42 +615,85 @@ export class CreditService {
 
                 .header {
                     margin-bottom: 32px;
-                    padding-bottom: 16px;
-                    border-bottom: 3px solid #555;
+                    padding: 24px;
+                    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                    border-radius: 12px;
+                    border: 1px solid #444;
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .header::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    right: -50%;
+                    width: 200%;
+                    height: 200%;
+                    background: radial-gradient(circle, rgba(0,120,212,0.1) 0%, transparent 70%);
+                    animation: pulse 4s ease-in-out infinite;
+                }
+
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 0.5; }
+                    50% { transform: scale(1.1); opacity: 0.8; }
                 }
 
                 .header h1 {
-                    font-size: 28px;
-                    font-weight: 700;
+                    font-size: 32px;
+                    font-weight: 800;
                     color: #ffffff;
                     margin-bottom: 8px;
+                    position: relative;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
                 }
 
                 .header p {
-                    font-size: 14px;
-                    color: #999;
+                    font-size: 15px;
+                    color: #aaa;
+                    position: relative;
                 }
 
                 .subscription-divider {
-                    height: 3px;
-                    background: linear-gradient(to right, transparent, #888, transparent);
-                    margin: 32px 0;
-                    border-radius: 2px;
+                    height: 4px;
+                    background: linear-gradient(90deg, transparent 0%, #0078D4 25%, #2ECC71 50%, #FFA500 75%, transparent 100%);
+                    margin: 40px 0;
+                    border-radius: 4px;
+                    box-shadow: 0 2px 8px rgba(0,120,212,0.3);
+                    animation: shimmer 3s ease-in-out infinite;
+                }
+
+                @keyframes shimmer {
+                    0%, 100% { opacity: 0.6; }
+                    50% { opacity: 1; }
                 }
 
                 .subscription-item {
-                    margin-bottom: 24px;
-                    animation: fadeIn 0.5s ease;
+                    margin-bottom: 32px;
+                    padding: 20px;
+                    background: linear-gradient(135deg, rgba(30,30,46,0.8) 0%, rgba(22,33,62,0.8) 100%);
+                    border-radius: 12px;
+                    border: 1px solid rgba(255,255,255,0.1);
+                    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                    animation: fadeIn 0.6s ease-out;
+                    transition: all 0.3s ease;
+                }
+
+                .subscription-item:hover {
+                    transform: translateY(-4px);
+                    box-shadow: 0 12px 32px rgba(0,120,212,0.2);
+                    border-color: rgba(0,120,212,0.3);
                 }
 
                 @keyframes fadeIn {
                     from {
                         opacity: 0;
-                        transform: translateY(10px);
+                        transform: translateY(20px) scale(0.95);
                     }
                     to {
                         opacity: 1;
-                        transform: translateY(0);
+                        transform: translateY(0) scale(1);
                     }
                 }
 
@@ -1006,18 +849,36 @@ export class CreditService {
                 }
 
                 .progress-bar-fill.color-low {
-                    background: linear-gradient(90deg, #E74C3C 0%, #C0392B 100%);
-                    box-shadow: 0 0 20px rgba(231, 76, 60, 0.7);
+                    background: linear-gradient(90deg, #E74C3C 0%, #C0392B 50%, #E74C3C 100%);
+                    box-shadow: 0 0 24px rgba(231, 76, 60, 0.8), inset 0 2px 10px rgba(255,255,255,0.2);
+                    animation: glow-red 2s ease-in-out infinite;
+                }
+
+                @keyframes glow-red {
+                    0%, 100% { box-shadow: 0 0 20px rgba(231, 76, 60, 0.6), inset 0 2px 10px rgba(255,255,255,0.2); }
+                    50% { box-shadow: 0 0 30px rgba(231, 76, 60, 1), inset 0 2px 10px rgba(255,255,255,0.3); }
                 }
 
                 .progress-bar-fill.color-normal {
-                    background: linear-gradient(90deg, #0078D4 0%, #005A9E 100%);
-                    box-shadow: 0 0 20px rgba(0, 120, 212, 0.7);
+                    background: linear-gradient(90deg, #0078D4 0%, #005A9E 50%, #0078D4 100%);
+                    box-shadow: 0 0 24px rgba(0, 120, 212, 0.8), inset 0 2px 10px rgba(255,255,255,0.2);
+                    animation: glow-blue 2s ease-in-out infinite;
+                }
+
+                @keyframes glow-blue {
+                    0%, 100% { box-shadow: 0 0 20px rgba(0, 120, 212, 0.6), inset 0 2px 10px rgba(255,255,255,0.2); }
+                    50% { box-shadow: 0 0 30px rgba(0, 120, 212, 1), inset 0 2px 10px rgba(255,255,255,0.3); }
                 }
 
                 .progress-bar-fill.color-high {
-                    background: linear-gradient(90deg, #2ECC71 0%, #27AE60 100%);
-                    box-shadow: 0 0 20px rgba(46, 204, 113, 0.7);
+                    background: linear-gradient(90deg, #2ECC71 0%, #27AE60 50%, #2ECC71 100%);
+                    box-shadow: 0 0 24px rgba(46, 204, 113, 0.8), inset 0 2px 10px rgba(255,255,255,0.2);
+                    animation: glow-green 2s ease-in-out infinite;
+                }
+
+                @keyframes glow-green {
+                    0%, 100% { box-shadow: 0 0 20px rgba(46, 204, 113, 0.6), inset 0 2px 10px rgba(255,255,255,0.2); }
+                    50% { box-shadow: 0 0 30px rgba(46, 204, 113, 1), inset 0 2px 10px rgba(255,255,255,0.3); }
                 }
 
                 .progress-bar-text {
@@ -1047,18 +908,38 @@ export class CreditService {
                 }
 
                 .footer {
-                    margin-top: 32px;
-                    padding: 16px;
-                    background: linear-gradient(135deg, #2d2d2d 0%, #252525 100%);
-                    border-radius: 8px;
+                    margin-top: 40px;
+                    padding: 20px;
+                    background: linear-gradient(135deg, rgba(30,30,46,0.9) 0%, rgba(22,33,62,0.9) 100%);
+                    border-radius: 12px;
                     text-align: center;
-                    font-size: 13px;
-                    color: #999;
-                    border: 2px dashed #444;
+                    font-size: 14px;
+                    color: #aaa;
+                    border: 2px solid rgba(0,120,212,0.3);
+                    box-shadow: 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 3px rgba(255,255,255,0.1);
+                    position: relative;
+                    overflow: hidden;
+                }
+
+                .footer::before {
+                    content: '';
+                    position: absolute;
+                    top: 0;
+                    left: -100%;
+                    width: 100%;
+                    height: 100%;
+                    background: linear-gradient(90deg, transparent, rgba(0,120,212,0.1), transparent);
+                    animation: slide 3s ease-in-out infinite;
+                }
+
+                @keyframes slide {
+                    0% { left: -100%; }
+                    100% { left: 100%; }
                 }
 
                 .footer strong {
                     color: #fff;
+                    position: relative;
                 }
             </style>
         `;
@@ -1075,7 +956,7 @@ export class CreditService {
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>📊 订阅信息详情</h1>
+                    <h1><i class="fas fa-chart-bar icon"></i>订阅信息详情</h1>
                     <p>查看您的所有活跃订阅和额度使用情况</p>
                 </div>`;
 
@@ -1093,16 +974,16 @@ export class CreditService {
             // 根据百分比确定进度条颜色和状态
             let statusClass = 'status-normal';
             let colorClass = 'color-normal';
-            let progressStatus = '📈 额度正常';
+            let progressStatus = '<i class="fas fa-chart-line icon"></i>额度正常';
 
             if (percentage < 5) {
                 statusClass = 'status-low';
                 colorClass = 'color-low';
-                progressStatus = '⚠️ 额度不足';
+                progressStatus = '<i class="fas fa-exclamation-triangle icon"></i>额度不足';
             } else if (percentage > 80) {
                 statusClass = 'status-high';
                 colorClass = 'color-high';
-                progressStatus = '✅ 额度充足';
+                progressStatus = '<i class="fas fa-check-circle icon"></i>额度充足';
             }
 
             const isFull = percentage >= 99.9;
@@ -1110,7 +991,7 @@ export class CreditService {
             // 套餐标题
             html += '<div class="subscription-item">';
             html += '<div class="plan-header ' + statusClass + '">';
-            html += '🎯 ' + (sub.subscriptionPlanName || '未知套餐');
+            html += '<i class="fas fa-bullseye icon"></i>' + (sub.subscriptionPlanName || '未知套餐');
             html += '</div>';
 
             // 表格
@@ -1119,18 +1000,18 @@ export class CreditService {
             html += '<tbody>';
 
             // 费用行
-            html += '<tr><td><strong>💰 费用</strong></td><td>¥' + (sub.cost || 0) + '</td></tr>';
+            html += '<tr><td><strong><i class="fas fa-money-bill-wave icon"></i>费用</strong></td><td>¥' + (sub.cost || 0) + '</td></tr>';
 
             // 计费周期行
-            html += '<tr><td><strong>🔄 计费周期</strong></td><td>' + (sub.billingCycleDesc || sub.billingCycle || '-') + '</td></tr>';
+            html += '<tr><td><strong><i class="fas fa-sync icon"></i>计费周期</strong></td><td>' + (sub.billingCycleDesc || sub.billingCycle || '-') + '</td></tr>';
 
             // 剩余天数行
-            html += '<tr><td><strong>⏰ 剩余天数</strong></td><td><span class="highlight-value">' + (sub.remainingDays || 0) + ' 天</span></td></tr>';
+            html += '<tr><td><strong><i class="fas fa-clock icon"></i>剩余天数</strong></td><td><span class="highlight-value">' + (sub.remainingDays || 0) + ' 天</span></td></tr>';
 
             // 额度进度条行
             html += '<tr class="progress-row"><td colspan="2">';
             html += '<div class="progress-header">';
-            html += '<span class="progress-title">💎 额度使用情况</span>';
+            html += '<span class="progress-title"><i class="fas fa-gem icon"></i>额度使用情况</span>';
             html += '<span class="progress-status">' + progressStatus + '</span>';
             html += '</div>';
             html += '<div class="progress-bar-container">';
@@ -1139,20 +1020,20 @@ export class CreditService {
             html += '</div></td></tr>';
 
             // 恢复速度行
-            html += '<tr><td><strong>⚡ 恢复速度</strong></td><td><span class="speed-value">$' + (plan.creditsPerHour || 0) + '</span> / 小时</td></tr>';
+            html += '<tr><td><strong><i class="fas fa-bolt icon"></i>恢复速度</strong></td><td><span class="speed-value">$' + (plan.creditsPerHour || 0) + '</span> / 小时</td></tr>';
 
             // 开始时间行
-            html += '<tr><td><strong>🕐 开始时间</strong></td><td>' + (sub.startDate || '-') + '</td></tr>';
+            html += '<tr><td><strong><i class="fas fa-clock icon"></i>开始时间</strong></td><td>' + (sub.startDate || '-') + '</td></tr>';
 
             // 到期时间行
-            html += '<tr><td><strong>⏳ 到期时间</strong></td><td>' + (sub.endDate || '-') + '</td></tr>';
+            html += '<tr><td><strong><i class="fas fa-hourglass-half icon"></i>到期时间</strong></td><td>' + (sub.endDate || '-') + '</td></tr>';
 
             html += '</tbody></table></div>';
         });
 
         html += `
                 <div class="footer">
-                    💡 <strong>提示：</strong>此页面会保持打开，您可以随时查看订阅信息
+                    <i class="fas fa-lightbulb icon"></i><strong>提示：</strong>此页面会保持打开，您可以随时查看订阅信息
                 </div>
             </div>
         </body>
