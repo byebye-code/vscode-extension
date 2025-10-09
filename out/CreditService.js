@@ -313,7 +313,7 @@ class CreditService {
             if (!this._subscriptionRefreshTimer) {
                 return;
             }
-            const response = await this.httpRequestWithAuth('GET', 'https://claude.nonocode.cn/admin-api/cc-admin/system/subscription/my', token);
+            const response = await this.httpRequestWithAuth('GET', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my', token);
             if (response.ok && response.data && Array.isArray(response.data)) {
                 this._subscriptionData = response.data;
                 this.updateTooltip();

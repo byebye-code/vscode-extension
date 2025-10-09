@@ -12,3 +12,5 @@ yarn.lock
 .spec-workflow/templates/tasks-template.md
 .spec-workflow/templates/tech-template.md
 .spec-workflow/user-templates/README.md
+vscode-extension-0.0.3.vsix
+vscode-extension-0.0.4.vsix

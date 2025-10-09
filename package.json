@@ -2,7 +2,7 @@
   "name": "vscode-extension",
   "displayName": "88Code 插件",
   "description": "88Code API 管理插件",
-  "version": "0.0.5",
+  "version": "0.0.4",
   "publisher": "88code",
   "repository": {
     "type": "git",
@@ -77,11 +77,11 @@
     "@types/node": "16.x",
     "@types/vscode": "^1.74.0",
     "@vscode/vsce": "^3.6.2",
-    "sm-crypto": "^0.3.13",
     "typescript": "^4.9.4"
   },
   "dependencies": {
     "@types/crypto-js": "^4.2.2",
-    "crypto-js": "^4.2.0"
+    "crypto-js": "^4.2.0",
+    "sm-crypto": "^0.3.13"
   }
 }

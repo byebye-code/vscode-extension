@@ -1,0 +1,59 @@
+# Source files
+src/**
+.vscode/**
+.vscode-test/**
+
+# Build files
+tsconfig.json
+.eslintrc.json
+.prettierrc
+.editorconfig
+
+# Git files
+.git/**
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/**
+azure-pipelines.yml
+
+# Documentation
+*.md
+!README.md
+
+# Dependencies will be automatically handled by vsce
+# Only production dependencies (in package.json dependencies) will be included
+
+# Test files
+test/**
+tests/**
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+**/*.spec.js
+
+# Development artifacts
+*.vsix
+.DS_Store
+Thumbs.db
+
+# Source maps (可选，如果要调试可以保留)
+out/**/*.map
+
+# Scripts
+scripts/**
+
+# Spec workflow
+.spec-workflow/**
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

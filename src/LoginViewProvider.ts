@@ -324,10 +324,12 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
         }
 
         .captcha-image {
-            width: 100px;
-            height: 38px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             border-radius: 6px;
-            cursor: pointer;
             border: 1px solid var(--vscode-input-border);
             object-fit: cover;
         }
@@ -475,14 +477,19 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
                                 placeholder="请输入验证码"
                                 required
                             />
-                            <img
-                                id="captchaImage"
-                                class="captcha-image"
-                                alt="验证码"
-                                title="点击刷新"
-                            />
+                            <div id="captchaWrapper" style="position: relative; width: 100px; height: 38px;" title="点击刷新验证码">
+                                <img
+                                    id="captchaImage"
+                                    class="captcha-image"
+                                    alt="验证码"
+                                    style="display: none;"
+                                />
+                                <div id="captchaLoading" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); border-radius: 6px; font-size: 11px; color: var(--vscode-descriptionForeground);">
+                                    加载中...
+                                </div>
+                            </div>
                         </div>
-                        <div class="help-text">点击验证码图片可刷新</div>
+                        <div class="help-text">点击验证码区域可刷新</div>
                     </div>
 
                     <button type="submit" id="loginBtn" class="md3-button">
@@ -561,8 +568,12 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
         window.addEventListener('load', () => {
             getCaptcha();
 
-            // 验证码图片点击刷新
-            document.getElementById('captchaImage').addEventListener('click', getCaptcha);
+            // 验证码区域点击刷新（绑定到 wrapper 上）
+            const captchaWrapper = document.getElementById('captchaWrapper');
+            if (captchaWrapper) {
+                captchaWrapper.style.cursor = 'pointer';
+                captchaWrapper.addEventListener('click', getCaptcha);
+            }
 
             // 表单提交事件
             document.getElementById('accountForm').addEventListener('submit', handleAccountLogin);
@@ -571,6 +582,21 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
 
         // 获取验证码
         function getCaptcha() {
+            // 重置加载状态
+            const captchaImg = document.getElementById('captchaImage');
+            const captchaLoading = document.getElementById('captchaLoading');
+
+            if (captchaImg) {
+                captchaImg.style.display = 'none';
+            }
+            if (captchaLoading) {
+                captchaLoading.style.display = 'flex';
+                captchaLoading.textContent = '加载中...';
+                captchaLoading.style.color = 'var(--vscode-descriptionForeground)';
+                captchaLoading.style.cursor = 'default';
+                captchaLoading.onclick = null;
+            }
+
             vscode.postMessage({ type: 'getCaptcha' });
         }
 
@@ -631,11 +657,25 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
             switch (message.type) {
                 case 'captchaData':
                     captchaUuid = message.data.captchaUuid;
-                    document.getElementById('captchaImage').src = message.data.captchaBase64Image;
+                    const captchaImg = document.getElementById('captchaImage');
+                    const captchaLoading = document.getElementById('captchaLoading');
+
+                    captchaImg.src = message.data.captchaBase64Image;
+                    captchaImg.style.display = 'block';
+                    if (captchaLoading) {
+                        captchaLoading.style.display = 'none';
+                    }
                     break;
 
                 case 'captchaError':
-                    showError(message.message || '获取验证码失败');
+                    const captchaLoadingError = document.getElementById('captchaLoading');
+                    if (captchaLoadingError) {
+                        captchaLoadingError.textContent = '加载失败';
+                        captchaLoadingError.style.color = 'var(--vscode-errorForeground)';
+                        captchaLoadingError.style.cursor = 'pointer';
+                        captchaLoadingError.onclick = getCaptcha;
+                    }
+                    showError(message.message || '获取验证码失败，点击验证码区域重试');
                     break;
 
                 case 'loginSuccess':
