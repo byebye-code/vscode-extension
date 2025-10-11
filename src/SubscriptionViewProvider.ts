@@ -348,6 +348,47 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                     color: #000;
                 }
 
+                /* 折叠区域样式 */
+                .collapsed-section {
+                    margin-top: 20px;
+                    border-top: 1px solid var(--vscode-panel-border);
+                    padding-top: 16px;
+                }
+
+                .collapse-toggle {
+                    width: 100%;
+                    padding: 12px 16px;
+                    background: var(--vscode-input-background);
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 8px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    font-size: 13px;
+                    font-weight: 500;
+                    color: var(--vscode-foreground);
+                    transition: all 0.2s ease;
+                }
+
+                .collapse-toggle:hover {
+                    background: var(--vscode-button-hoverBackground);
+                    opacity: 0.8;
+                }
+
+                .collapse-toggle .icon {
+                    transition: transform 0.2s ease;
+                }
+
+                .collapse-toggle.expanded .icon {
+                    transform: rotate(180deg);
+                }
+
+                .collapsed-content {
+                    margin-top: 12px;
+                    transition: all 0.3s ease;
+                }
+
                 .reset-credit-btn {
                     padding: 8px 16px;
                     border: none;
@@ -501,11 +542,23 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                 <p>${sortedSubscriptions.length} 个活跃订阅</p>
             </div>`;
 
+        // 分类订阅：额度>0和额度<=0
+        const activeSubscriptionsWithCredit = sortedSubscriptions.filter((sub: any) => {
+            const currentCredits = sub.currentCredits || 0;
+            return currentCredits > 0;
+        });
+
+        const emptySubscriptions = sortedSubscriptions.filter((sub: any) => {
+            const currentCredits = sub.currentCredits || 0;
+            return currentCredits <= 0;
+        });
+
         // 计算总额度
         let totalCredits = 0;
         let totalLimit = 0;
 
-        sortedSubscriptions.forEach((sub: any) => {
+        // 渲染函数：生成订阅卡片HTML
+        const renderSubscriptionCard = (sub: any) => {
             const plan = sub.subscriptionPlan || {};
             const currentCredits = sub.currentCredits || 0;
             const creditLimit = plan.creditLimit || 1;
@@ -530,10 +583,13 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                 ? sub.lastCreditReset.replace(' ', ' ') 
                 : '暂无记录';
 
-            // 判断是否为PAYGO套餐（PAYGO套餐不显示重置按钮）
+            // 判断是否显示重置按钮
+            // 1. PAYGO套餐不显示重置按钮
+            // 2. 剩余重置次数为0时不显示重置按钮
             const isPAYGO = sub.subscriptionPlanName === 'PAYGO' || plan.planType === 'PAY_PER_USE';
+            const showResetButton = !isPAYGO && (sub.resetTimes > 0);
 
-            html += `
+            return `
             <div class="subscription-card">
                 <div class="card-header">
                     <div class="card-title"><i class="fas fa-bullseye icon"></i>${sub.subscriptionPlanName || '未知套餐'}</div>
@@ -562,7 +618,7 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                                 <div class="info-label"><i class="fas fa-history icon"></i>上次重置时间</div>
                                 <div class="info-value">${lastResetTime}</div>
                             </div>
-                            ${!isPAYGO ? `
+                            ${showResetButton ? `
                             <button 
                                 class="reset-credit-btn" 
                                 data-sub-id="${sub.id}" 
@@ -587,7 +643,45 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                     </div>
                 </div>
             </div>`;
+        };
+
+        // 渲染有额度的订阅
+        activeSubscriptionsWithCredit.forEach((sub: any) => {
+            const cardHtml = renderSubscriptionCard(sub);
+            html += cardHtml;
+            
+            // 累加总额度
+            const currentCredits = sub.currentCredits || 0;
+            const creditLimit = sub.subscriptionPlan?.creditLimit || 1;
+            totalCredits += currentCredits;
+            totalLimit += creditLimit;
         });
+
+        // 渲染额度为0的订阅（折叠区域）
+        if (emptySubscriptions.length > 0) {
+            html += `
+            <div class="collapsed-section">
+                <button class="collapse-toggle" id="collapseToggle">
+                    <i class="fas fa-chevron-down icon" id="collapseIcon"></i>
+                    <span>额度已用完的套餐 (${emptySubscriptions.length})</span>
+                </button>
+                <div class="collapsed-content" id="collapsedContent" style="display: none;">`;
+
+            emptySubscriptions.forEach((sub: any) => {
+                const cardHtml = renderSubscriptionCard(sub);
+                html += cardHtml;
+                
+                // 累加总额度
+                const currentCredits = sub.currentCredits || 0;
+                const creditLimit = sub.subscriptionPlan?.creditLimit || 1;
+                totalCredits += currentCredits;
+                totalLimit += creditLimit;
+            });
+
+            html += `
+                </div>
+            </div>`;
+        }
 
         // 总计
         const totalPercentage = totalLimit > 0 ? ((totalCredits / totalLimit) * 100).toFixed(1) : '0.0';
@@ -620,6 +714,25 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 let currentResetSubId = null;
+
+                // 折叠/展开功能
+                const collapseToggle = document.getElementById('collapseToggle');
+                const collapsedContent = document.getElementById('collapsedContent');
+                const collapseIcon = document.getElementById('collapseIcon');
+
+                if (collapseToggle && collapsedContent) {
+                    collapseToggle.addEventListener('click', function() {
+                        const isExpanded = collapsedContent.style.display !== 'none';
+                        
+                        if (isExpanded) {
+                            collapsedContent.style.display = 'none';
+                            collapseToggle.classList.remove('expanded');
+                        } else {
+                            collapsedContent.style.display = 'block';
+                            collapseToggle.classList.add('expanded');
+                        }
+                    });
+                }
 
                 // 计算时间差（毫秒）
                 function getTimeDiff(lastResetTime) {
