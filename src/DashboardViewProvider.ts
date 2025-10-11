@@ -36,9 +36,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 case 'logout':
                     await this.logout();
                     break;
-                case 'resetCredits':
-                    await this.resetCredits();
-                    break;
+                // 重置余额功能已禁用
+                // case 'resetCredits':
+                //     await this.resetCredits();
+                //     break;
             }
         });
 
@@ -620,12 +621,13 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                         <div class="credit-subtitle">
                             您的可用额度<span id="creditChange"></span>（美元）
                         </div>
-                        <div class="credit-actions">
+                        <!-- 重置余额按钮已隐藏 -->
+                        <!-- <div class="credit-actions">
                             <button id="resetCreditsBtn" class="md3-button credit-reset-btn">
                                 <span class="button-icon"><i class="fas fa-sync"></i></span>
                                 重置余额
                             </button>
-                        </div>
+                        </div> -->
                     </div>
 
                     <!-- MD3 Codex 用量卡片 - 已隐藏 -->
@@ -733,12 +735,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                     });
                 });
 
-                // 重置余额
-                document.getElementById('resetCreditsBtn').addEventListener('click', () => {
-                    vscode.postMessage({
-                        type: 'resetCredits'
-                    });
-                });
+                // 重置余额按钮事件已注释
+                // document.getElementById('resetCreditsBtn').addEventListener('click', () => {
+                //     vscode.postMessage({
+                //         type: 'resetCredits'
+                //     });
+                // });
 
                 // 格式化数字 - 仪表盘使用K/M格式
                 function formatNumber(num) {

@@ -19,6 +19,12 @@ class CreditService {
         this._subscriptionViewProvider = subscriptionViewProvider;
         // 加载用户设置
         this.loadSettings();
+        // 设置订阅视图的消息处理器
+        this._subscriptionViewProvider.setMessageHandler(async (message) => {
+            if (message.type === 'resetSingleSubscription') {
+                await this.resetSingleSubscription(message.subId);
+            }
+        });
         // 创建状态栏项目，显示在右下角
         this._statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         // 设置命令，点击时打开订阅详情侧边栏
@@ -162,6 +168,45 @@ class CreditService {
         catch (error) {
             console.error('重置余额失败:', error);
             vscode.window.showErrorMessage(`重置余额失败: ${error}`);
+        }
+        finally {
+            this._isUpdating = false;
+        }
+    }
+    // 重置单个订阅
+    async resetSingleSubscription(subId) {
+        if (this._isUpdating) {
+            vscode.window.showWarningMessage('正在执行操作，请稍候...');
+            return;
+        }
+        this._isUpdating = true;
+        try {
+            const token = this._context.globalState.get('88code_token');
+            if (!token) {
+                vscode.window.showErrorMessage('请先登录');
+                return;
+            }
+            vscode.window.showInformationMessage('正在重置余额...');
+            const response = await this.httpRequestWithAuth('POST', 'https://www.88code.org/admin-api/cc-admin/system/subscription/my/reset-credits/' + subId, token, null);
+            // 无论成功失败，都刷新数据
+            await this.fetchCredits();
+            if (!response) {
+                vscode.window.showErrorMessage('服务器无响应');
+                return;
+            }
+            if (response.ok === true) {
+                vscode.window.showInformationMessage('余额重置成功！');
+            }
+            else {
+                const errorMsg = response.msg || '重置失败';
+                vscode.window.showErrorMessage(`重置失败: ${errorMsg}`);
+            }
+        }
+        catch (error) {
+            console.error('重置单个订阅失败:', error);
+            vscode.window.showErrorMessage(`重置失败: ${error}`);
+            // 出错时也刷新数据
+            await this.fetchCredits();
         }
         finally {
             this._isUpdating = false;
@@ -424,7 +469,8 @@ class CreditService {
                 progressColor = '#CE9178';
             }
             tooltipLines.push(`<div style="margin: 4px 0;">💎 <span style="color: #569CD6;">额度:</span> <span style="font-weight: bold; color: ${progressColor};">$${currentCredits}</span> / <span style="color: #888;">$${creditLimit}</span> <span style="color: ${progressColor};">(${percentage}%)</span></div>`);
-            tooltipLines.push(`<div style="margin: 4px 0;">⚡ <span style="color: #569CD6;">恢复:</span> <span style="font-weight: 500; color: #4EC9B0;">$${plan.creditsPerHour || 0}/小时</span></div>`);
+            // 隐藏恢复速度显示
+            // tooltipLines.push(`<div style="margin: 4px 0;">⚡ <span style="color: #569CD6;">恢复:</span> <span style="font-weight: 500; color: #4EC9B0;">$${plan.creditsPerHour || 0}/小时</span></div>`);
             tooltipLines.push('</div>');
         });
         // 总计信息
@@ -901,8 +947,8 @@ class CreditService {
             html += '<div class="progress-bar-fill ' + colorClass + (isFull ? ' full' : '') + '" style="width:' + Math.min(percentage, 100).toFixed(1) + '%"></div>';
             html += '<div class="progress-bar-text">$' + currentCredits.toFixed(2) + ' / $' + creditLimit.toFixed(2) + ' (' + percentage.toFixed(1) + '%)</div>';
             html += '</div></td></tr>';
-            // 恢复速度行
-            html += '<tr><td><strong><i class="fas fa-bolt icon"></i>恢复速度</strong></td><td><span class="speed-value">$' + (plan.creditsPerHour || 0) + '</span> / 小时</td></tr>';
+            // 恢复速度行 - 已隐藏
+            // html += '<tr><td><strong><i class="fas fa-bolt icon"></i>恢复速度</strong></td><td><span class="speed-value">$' + (plan.creditsPerHour || 0) + '</span> / 小时</td></tr>';
             // 开始时间行
             html += '<tr><td><strong><i class="fas fa-clock icon"></i>开始时间</strong></td><td>' + (sub.startDate || '-') + '</td></tr>';
             // 到期时间行

@@ -4,8 +4,14 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'subscriptionView';
     private _view?: vscode.WebviewView;
     private _subscriptionData: any = null;
+    private _messageHandler?: (message: any) => void;
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
+
+    // 设置消息处理器
+    public setMessageHandler(handler: (message: any) => void) {
+        this._messageHandler = handler;
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -18,6 +24,13 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
             enableScripts: true,
             localResourceRoots: [this._extensionUri]
         };
+
+        // 监听来自 webview 的消息
+        webviewView.webview.onDidReceiveMessage(async (message) => {
+            if (this._messageHandler) {
+                await this._messageHandler(message);
+            }
+        });
 
         this.updateView();
     }
@@ -131,6 +144,22 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
 
     // 订阅信息页面
     private _getSubscriptionHtml(activeSubscriptions: any[]): string {
+        // 定义排序顺序
+        const planOrder: { [key: string]: number } = {
+            'FREE': 1,
+            'PRO': 2,
+            'PLUS': 3,
+            'MAX': 4,
+            'PAYGO': 999 // PAYGO 始终在最后
+        };
+
+        // 对订阅进行排序
+        const sortedSubscriptions = [...activeSubscriptions].sort((a, b) => {
+            const orderA = planOrder[a.subscriptionPlanName] || 900; // 未知类型排在 PAYGO 之前
+            const orderB = planOrder[b.subscriptionPlanName] || 900;
+            return orderA - orderB;
+        });
+
         const styles = `
             <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
@@ -318,6 +347,143 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                     margin-bottom: 4px;
                     color: #000;
                 }
+
+                .reset-credit-btn {
+                    padding: 8px 16px;
+                    border: none;
+                    border-radius: 20px;
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    font-size: 11px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    white-space: nowrap;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                }
+
+                .reset-credit-btn:hover:not(:disabled) {
+                    background: var(--vscode-button-hoverBackground);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+                }
+
+                .reset-credit-btn:disabled {
+                    background: var(--vscode-input-background);
+                    color: var(--vscode-descriptionForeground);
+                    cursor: not-allowed;
+                    opacity: 0.7;
+                    box-shadow: none;
+                }
+
+                .reset-credit-btn:active:not(:disabled) {
+                    transform: translateY(0);
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                }
+
+                /* 模态框样式 */
+                .modal-overlay {
+                    display: none;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0, 0, 0, 0.6);
+                    z-index: 1000;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .modal-overlay.active {
+                    display: flex;
+                }
+
+                .modal-content {
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 8px;
+                    padding: 20px;
+                    max-width: 400px;
+                    width: 90%;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+                }
+
+                .modal-header {
+                    font-size: 16px;
+                    font-weight: 600;
+                    margin-bottom: 16px;
+                    color: var(--vscode-foreground);
+                }
+
+                .modal-body {
+                    margin-bottom: 20px;
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 13px;
+                    line-height: 1.6;
+                }
+
+                .modal-input {
+                    width: 100%;
+                    padding: 8px;
+                    border: 1px solid var(--vscode-input-border);
+                    background: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    border-radius: 4px;
+                    font-size: 13px;
+                    margin-top: 12px;
+                }
+
+                .modal-input:focus {
+                    outline: 1px solid var(--vscode-focusBorder);
+                }
+
+                .modal-footer {
+                    display: flex;
+                    gap: 10px;
+                    justify-content: flex-end;
+                }
+
+                .modal-btn {
+                    padding: 8px 16px;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    transition: all 0.2s ease;
+                }
+
+                .modal-btn-cancel {
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                }
+
+                .modal-btn-cancel:hover {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                }
+
+                .modal-btn-confirm {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                }
+
+                .modal-btn-confirm:hover:not(:disabled) {
+                    background: var(--vscode-button-hoverBackground);
+                }
+
+                .modal-btn-confirm:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                }
+
+                .warning-text {
+                    color: #E74C3C;
+                    font-weight: 600;
+                    margin-top: 8px;
+                }
             </style>
         `;
 
@@ -332,14 +498,14 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
         <body>
             <div class="header">
                 <h2><i class="fas fa-chart-bar icon"></i>订阅信息</h2>
-                <p>${activeSubscriptions.length} 个活跃订阅</p>
+                <p>${sortedSubscriptions.length} 个活跃订阅</p>
             </div>`;
 
         // 计算总额度
         let totalCredits = 0;
         let totalLimit = 0;
 
-        activeSubscriptions.forEach((sub: any) => {
+        sortedSubscriptions.forEach((sub: any) => {
             const plan = sub.subscriptionPlan || {};
             const currentCredits = sub.currentCredits || 0;
             const creditLimit = plan.creditLimit || 1;
@@ -358,6 +524,14 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                 statusClass = 'high';
                 statusText = '<i class="fas fa-check-circle icon"></i>额度充足';
             }
+
+            // 格式化上次重置时间
+            const lastResetTime = sub.lastCreditReset 
+                ? sub.lastCreditReset.replace(' ', ' ') 
+                : '暂无记录';
+
+            // 判断是否为PAYGO套餐（PAYGO套餐不显示重置按钮）
+            const isPAYGO = sub.subscriptionPlanName === 'PAYGO' || plan.planType === 'PAY_PER_USE';
 
             html += `
             <div class="subscription-card">
@@ -379,8 +553,27 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                         <div class="info-value">${sub.remainingDays || 0} 天</div>
                     </div>
                     <div class="info-item">
-                        <div class="info-label"><i class="fas fa-bolt icon"></i>恢复速度</div>
-                        <div class="info-value">$${plan.creditsPerHour || 0}/小时</div>
+                        <div class="info-label"><i class="fas fa-redo-alt icon"></i>剩余重置次数</div>
+                        <div class="info-value">${sub.resetTimes || 0} 次</div>
+                    </div>
+                    <div class="info-item" style="grid-column: 1 / -1;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <div>
+                                <div class="info-label"><i class="fas fa-history icon"></i>上次重置时间</div>
+                                <div class="info-value">${lastResetTime}</div>
+                            </div>
+                            ${!isPAYGO ? `
+                            <button 
+                                class="reset-credit-btn" 
+                                data-sub-id="${sub.id}" 
+                                data-credit-limit="${creditLimit}"
+                                data-current-credits="${currentCredits}"
+                                data-last-reset="${sub.lastCreditReset || ''}">
+                                <i class="fas fa-sync-alt icon"></i>
+                                <span class="btn-text">加载中...</span>
+                            </button>
+                            ` : ''}
+                        </div>
                     </div>
                 </div>
                 <div class="progress-container">
@@ -403,6 +596,144 @@ export class SubscriptionViewProvider implements vscode.WebviewViewProvider {
                 <div class="summary-title"><i class="fas fa-box icon"></i>总计</div>
                 <div><i class="fas fa-gem icon"></i>总额度: $${totalCredits} / $${totalLimit} (${totalPercentage}%)</div>
             </div>
+
+            <!-- 二次确认模态框 -->
+            <div class="modal-overlay" id="confirmModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <i class="fas fa-exclamation-triangle" style="color: #E74C3C;"></i>
+                        确认重置余额
+                    </div>
+                    <div class="modal-body">
+                        <p>您当前的余额为 <strong id="modalCurrentCredit">$0</strong>，重置后将恢复到 <strong id="modalCreditLimit">$0</strong>。</p>
+                        <p class="warning-text">此操作不可撤销！</p>
+                        <p>请输入 <strong>"确认"</strong> 来继续：</p>
+                        <input type="text" id="confirmInput" class="modal-input" placeholder="请输入：确认" />
+                    </div>
+                    <div class="modal-footer">
+                        <button class="modal-btn modal-btn-cancel" id="modalCancelBtn">取消</button>
+                        <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn" disabled>确认重置</button>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                const vscode = acquireVsCodeApi();
+                let currentResetSubId = null;
+
+                // 计算时间差（毫秒）
+                function getTimeDiff(lastResetTime) {
+                    if (!lastResetTime) {
+                        return Infinity;
+                    }
+                    const lastTime = new Date(lastResetTime).getTime();
+                    const now = new Date().getTime();
+                    return now - lastTime;
+                }
+
+                // 格式化倒计时
+                function formatCountdown(milliseconds) {
+                    const hours = Math.floor(milliseconds / (1000 * 60 * 60));
+                    const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((milliseconds % (1000 * 60)) / 1000);
+                    return hours + '小时' + minutes + '分' + seconds + '秒';
+                }
+
+                // 更新所有按钮状态
+                function updateButtonStates() {
+                    const buttons = document.querySelectorAll('.reset-credit-btn');
+                    buttons.forEach(button => {
+                        const subId = button.getAttribute('data-sub-id');
+                        const creditLimit = parseFloat(button.getAttribute('data-credit-limit'));
+                        const lastReset = button.getAttribute('data-last-reset');
+                        const btnText = button.querySelector('.btn-text');
+
+                        const timeDiff = getTimeDiff(lastReset);
+                        const fiveHours = 5 * 60 * 60 * 1000;
+
+                        if (timeDiff >= fiveHours) {
+                            // 可以重置
+                            button.disabled = false;
+                            btnText.textContent = '重置余额($' + creditLimit.toFixed(2) + ')';
+                        } else {
+                            // 需要等待
+                            button.disabled = true;
+                            const remaining = fiveHours - timeDiff;
+                            btnText.textContent = formatCountdown(remaining) + '后可重置';
+                        }
+                    });
+                }
+
+                // 初始化按钮状态
+                updateButtonStates();
+
+                // 每秒更新一次倒计时
+                setInterval(updateButtonStates, 1000);
+
+                // 按钮点击事件
+                document.querySelectorAll('.reset-credit-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const subId = this.getAttribute('data-sub-id');
+                        const creditLimit = parseFloat(this.getAttribute('data-credit-limit'));
+                        const currentCredits = parseFloat(this.getAttribute('data-current-credits'));
+
+                        currentResetSubId = subId;
+
+                        // 如果当前余额大于5美元，显示确认模态框
+                        if (currentCredits > 5) {
+                            document.getElementById('modalCurrentCredit').textContent = '$' + currentCredits.toFixed(2);
+                            document.getElementById('modalCreditLimit').textContent = '$' + creditLimit.toFixed(2);
+                            document.getElementById('confirmInput').value = '';
+                            document.getElementById('modalConfirmBtn').disabled = true;
+                            document.getElementById('confirmModal').classList.add('active');
+                        } else {
+                            // 直接发送重置请求
+                            vscode.postMessage({
+                                type: 'resetSingleSubscription',
+                                subId: subId
+                            });
+                        }
+                    });
+                });
+
+                // 模态框输入监听
+                const confirmInput = document.getElementById('confirmInput');
+                const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+
+                confirmInput.addEventListener('input', function() {
+                    if (this.value === '确认') {
+                        modalConfirmBtn.disabled = false;
+                    } else {
+                        modalConfirmBtn.disabled = true;
+                    }
+                });
+
+                // 模态框取消按钮
+                document.getElementById('modalCancelBtn').addEventListener('click', function() {
+                    document.getElementById('confirmModal').classList.remove('active');
+                    currentResetSubId = null;
+                });
+
+                // 模态框确认按钮
+                modalConfirmBtn.addEventListener('click', function() {
+                    if (currentResetSubId) {
+                        vscode.postMessage({
+                            type: 'resetSingleSubscription',
+                            subId: currentResetSubId
+                        });
+                        document.getElementById('confirmModal').classList.remove('active');
+                        currentResetSubId = null;
+                    }
+                });
+
+                // 点击模态框背景关闭
+                document.getElementById('confirmModal').addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('active');
+                        currentResetSubId = null;
+                    }
+                });
+            </script>
         </body>
         </html>`;
 
