@@ -98,7 +98,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 });
             }
         } catch (error) {
-            vscode.window.showErrorMessage(`加载仪表盘失败: ${error}`);
+            console.error('加载仪表盘失败:', error);
+            // 隐藏加载仪表盘失败的通知
+            // vscode.window.showErrorMessage(`加载仪表盘失败: ${error}`);
         }
     }
 

@@ -149,6 +149,11 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
             // 保存token
             await this._context.globalState.update('88code_token', loginData.token);
 
+            // 保存账号密码（用于自动重新登录）
+            await this._context.globalState.update('88code_username', username);
+            await this._context.globalState.update('88code_password', password); // 保存原始密码
+            await this._context.globalState.update('88code_last_login', new Date().toISOString());
+
             // 设置登录状态
             await vscode.commands.executeCommand('setContext', '88code:loggedIn', true);
 
@@ -175,6 +180,68 @@ export class LoginViewProvider implements vscode.WebviewViewProvider {
                     message: error instanceof Error ? error.message : '登录失败，请检查用户名和密码'
                 });
             }
+        }
+    }
+
+    /**
+     * 使用保存的账号密码重新登录（自动刷新token）
+     */
+    public async autoRelogin(): Promise<boolean> {
+        try {
+            const username = this._context.globalState.get<string>('88code_username');
+            const password = this._context.globalState.get<string>('88code_password');
+
+            if (!username || !password) {
+                console.log('没有保存的账号密码，无法自动重新登录');
+                return false;
+            }
+
+            // 尝试多次自动登录（最多3次）
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    // 获取验证码
+                    const captchaData = await getCaptcha();
+
+                    // 加密密码
+                    const encryptedPassword = encryptData(password);
+                    if (!encryptedPassword) {
+                        throw new Error('密码加密失败');
+                    }
+
+                    // 调用登录接口（自动登录时验证码留空，由后端判断）
+                    const loginData = await login({
+                        loginName: username,
+                        password: encryptedPassword,
+                        loginDevice: 1,
+                        captchaCode: '', // 自动登录时验证码留空
+                        captchaUuid: captchaData.captchaUuid
+                    });
+
+                    // 更新token和登录时间
+                    await this._context.globalState.update('88code_token', loginData.token);
+                    await this._context.globalState.update('88code_last_login', new Date().toISOString());
+
+                    console.log(`自动重新登录成功（第${attempt}次尝试）`);
+                    return true;
+
+                } catch (error: any) {
+                    console.log(`自动重新登录第${attempt}次尝试失败:`, error?.message || error);
+                    
+                    // 如果是最后一次尝试，返回失败
+                    if (attempt === 3) {
+                        throw error;
+                    }
+                    
+                    // 等待1秒后重试
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+            }
+
+            return false;
+
+        } catch (error) {
+            console.error('自动重新登录失败:', error);
+            return false;
         }
     }
 

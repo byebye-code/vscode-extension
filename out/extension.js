@@ -14,19 +14,25 @@ let creditService;
 let codexService;
 // 订阅视图提供者
 let subscriptionViewProvider;
+// 登录视图提供者
+let loginViewProvider;
+// 自动重新登录定时器
+let autoReloginTimer;
 function activate(context) {
     console.log('88Code 插件已激活！');
     // 检查是否已登录
     const token = context.globalState.get('88code_token');
     vscode.commands.executeCommand('setContext', '88code:loggedIn', !!token);
     // 注册登录视图提供程序
-    const loginViewProvider = new LoginViewProvider_1.LoginViewProvider(context);
+    loginViewProvider = new LoginViewProvider_1.LoginViewProvider(context);
     console.log('正在注册 LoginViewProvider，viewType:', LoginViewProvider_1.LoginViewProvider.viewType);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(LoginViewProvider_1.LoginViewProvider.viewType, loginViewProvider, {
         webviewOptions: {
             retainContextWhenHidden: true
         }
     }));
+    // 启动自动重新登录定时任务
+    startAutoReloginTask(context);
     // 注册看板视图提供程序
     const dashboardViewProvider = new DashboardViewProvider_1.DashboardViewProvider(context);
     console.log('正在注册 DashboardViewProvider，viewType:', DashboardViewProvider_1.DashboardViewProvider.viewType);
@@ -68,9 +74,18 @@ function activate(context) {
         await context.globalState.update('88code_token', undefined);
         await context.globalState.update('88code_cached_credits', undefined);
         await context.globalState.update('88code_cached_codex', undefined);
+        // 清除保存的账号密码
+        await context.globalState.update('88code_username', undefined);
+        await context.globalState.update('88code_password', undefined);
+        await context.globalState.update('88code_last_login', undefined);
         await vscode.commands.executeCommand('setContext', '88code:loggedIn', false);
         creditService.stop();
         codexService.stop();
+        // 停止自动重新登录任务
+        if (autoReloginTimer) {
+            clearInterval(autoReloginTimer);
+            autoReloginTimer = undefined;
+        }
         vscode.window.showInformationMessage('已退出登录');
     });
     // 刷新积分命令
@@ -105,6 +120,90 @@ function activate(context) {
     context.subscriptions.push(helloWorldDisposable, loginDisposable, logoutDisposable, refreshCreditsDisposable, resetCreditsDisposable, showSubscriptionInfoDisposable, updateSettingsDisposable, loginStatusListener);
 }
 exports.activate = activate;
-function deactivate() { }
+/**
+ * 启动自动重新登录定时任务
+ * 每24小时自动使用保存的账号密码重新登录，刷新token
+ */
+function startAutoReloginTask(context) {
+    // 清除之前的定时器
+    if (autoReloginTimer) {
+        clearInterval(autoReloginTimer);
+    }
+    // 检查是否有保存的账号密码
+    const username = context.globalState.get('88code_username');
+    const password = context.globalState.get('88code_password');
+    if (!username || !password) {
+        console.log('没有保存的账号密码，跳过自动重新登录任务');
+        return;
+    }
+    console.log('已启动自动重新登录任务，将每24小时自动刷新token');
+    // 立即执行一次检查（如果上次登录超过23小时，则重新登录）
+    checkAndRelogin(context);
+    // 设置定时器，每24小时执行一次
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+    autoReloginTimer = setInterval(() => {
+        checkAndRelogin(context);
+    }, TWENTY_FOUR_HOURS);
+}
+/**
+ * 检查并执行自动重新登录
+ */
+async function checkAndRelogin(context) {
+    try {
+        const lastLogin = context.globalState.get('88code_last_login');
+        if (!lastLogin) {
+            console.log('没有上次登录时间记录，执行自动重新登录');
+            await performAutoRelogin();
+            return;
+        }
+        const lastLoginTime = new Date(lastLogin).getTime();
+        const now = new Date().getTime();
+        const hoursSinceLastLogin = (now - lastLoginTime) / (1000 * 60 * 60);
+        // 如果距离上次登录超过23小时，则自动重新登录
+        if (hoursSinceLastLogin >= 23) {
+            console.log(`距离上次登录已${hoursSinceLastLogin.toFixed(1)}小时，执行自动重新登录`);
+            await performAutoRelogin();
+        }
+        else {
+            console.log(`距离上次登录仅${hoursSinceLastLogin.toFixed(1)}小时，暂不需要重新登录`);
+        }
+    }
+    catch (error) {
+        console.error('检查自动重新登录失败:', error);
+    }
+}
+/**
+ * 执行自动重新登录
+ */
+async function performAutoRelogin() {
+    try {
+        if (!loginViewProvider) {
+            console.error('登录视图提供者未初始化');
+            return;
+        }
+        console.log('正在执行自动重新登录...');
+        const success = await loginViewProvider.autoRelogin();
+        if (success) {
+            console.log('自动重新登录成功，token已更新');
+            // 通知积分服务刷新数据
+            if (creditService) {
+                await creditService.refreshCredits();
+            }
+        }
+        else {
+            console.log('自动重新登录失败，可能需要手动登录');
+        }
+    }
+    catch (error) {
+        console.error('执行自动重新登录失败:', error);
+    }
+}
+function deactivate() {
+    // 清除自动重新登录定时器
+    if (autoReloginTimer) {
+        clearInterval(autoReloginTimer);
+        autoReloginTimer = undefined;
+    }
+}
 exports.deactivate = deactivate;
 //# sourceMappingURL=extension.js.map
