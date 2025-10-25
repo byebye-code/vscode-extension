@@ -1,22 +1,11 @@
-
 node_modules/
+out/
 
 .DS_Store
-vscode-extension-0.0.2.vsix
+*.vsix
 yarn.lock
+
 .spec-workflow/config.example.toml
-.spec-workflow/templates/design-template.md
-.spec-workflow/templates/product-template.md
-.spec-workflow/templates/requirements-template.md
-.spec-workflow/templates/structure-template.md
-.spec-workflow/templates/tasks-template.md
-.spec-workflow/templates/tech-template.md
+.spec-workflow/templates/
 .spec-workflow/user-templates/README.md
-vscode-extension-0.0.3.vsix
-vscode-extension-0.0.4.vsix
-vscode-extension-0.0.5.vsix
-vscode-extension-0.0.6.vsix
-vscode-extension-0.0.7.vsix
-vscode-extension-0.0.8.vsix
-vscode-extension-0.0.9.vsix
-out/
+.github/workflows/README.md
