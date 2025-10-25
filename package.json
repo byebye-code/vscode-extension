@@ -2,7 +2,7 @@
   "name": "vscode-extension",
   "displayName": "88Code 插件",
   "description": "88Code API 管理插件",
-  "version": "0.0.10",
+  "version": "0.1.0",
   "publisher": "88code",
   "repository": {
     "type": "git",

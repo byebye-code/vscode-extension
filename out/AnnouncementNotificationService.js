@@ -24,16 +24,9 @@ class AnnouncementNotificationService {
                 console.log('没有公告可显示');
                 return;
             }
-            // 检查是否已经显示过这个公告
-            const lastShownAnnouncementId = this._context.globalState.get('88code_last_shown_announcement_id');
-            if (lastShownAnnouncementId === latestAnnouncement.announcementId) {
-                console.log('最新公告已经显示过，跳过');
-                return;
-            }
+            // 每次启动都显示最新公告，不再检查ID
             // 显示公告弹窗
             this.showAnnouncementPanel(latestAnnouncement);
-            // 记录已显示的公告ID
-            await this._context.globalState.update('88code_last_shown_announcement_id', latestAnnouncement.announcementId);
         }
         catch (error) {
             console.error('启动公告通知服务失败:', error);
