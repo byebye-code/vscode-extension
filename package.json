@@ -14,6 +14,9 @@
   "categories": [
     "Other"
   ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished"
@@ -50,8 +53,19 @@
         },
         {
           "type": "webview",
+          "id": "announcementView",
+          "name": "公告",
+          "when": "88code:loggedIn"
+        },
+        {
+          "type": "webview",
           "id": "settingsView",
           "name": "设置"
+        },
+        {
+          "type": "webview",
+          "id": "friendLinksView",
+          "name": "友链"
         }
       ]
     },

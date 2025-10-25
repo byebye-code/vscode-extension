@@ -29,6 +29,24 @@ class SubscriptionViewProvider {
         this._subscriptionData = data;
         this.updateView();
     }
+    // 显示支付二维码
+    showPaymentQRCode(paymentData) {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'showPaymentQRCode',
+                data: paymentData
+            });
+        }
+    }
+    // 更新支付状态
+    updatePaymentStatus(statusData) {
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'updatePaymentStatus',
+                data: statusData
+            });
+        }
+    }
     // 更新视图内容
     updateView() {
         if (this._view) {
@@ -95,6 +113,7 @@ class SubscriptionViewProvider {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
                 body {
                     font-family: var(--vscode-font-family);
@@ -107,17 +126,65 @@ class SubscriptionViewProvider {
                     margin-top: 50px;
                 }
                 .empty-icon {
-                    font-size: 48px;
-                    margin-bottom: 16px;
+                    font-size: 64px;
+                    margin-bottom: 24px;
+                    opacity: 0.5;
+                }
+                .empty-title {
+                    font-size: 20px;
+                    font-weight: 600;
+                    margin-bottom: 12px;
+                    color: var(--vscode-foreground);
+                }
+                .empty-desc {
+                    font-size: 14px;
+                    color: var(--vscode-descriptionForeground);
+                    margin-bottom: 32px;
+                }
+                .open-plan-btn {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    border-radius: 20px;
+                    padding: 12px 32px;
+                    font-size: 15px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                }
+                .open-plan-btn:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                }
+                .open-plan-btn:active {
+                    transform: translateY(0);
                 }
             </style>
         </head>
         <body>
             <div class="empty">
-                <div class="empty-icon"><i class="fas fa-box fa-3x"></i></div>
-                <h3>暂无活跃订阅</h3>
-                <p style="color: var(--vscode-descriptionForeground);">您当前没有活跃的订阅</p>
+                <div class="empty-icon"><i class="fas fa-inbox"></i></div>
+                <h3 class="empty-title">暂无活跃订阅</h3>
+                <p class="empty-desc">您当前没有活跃的订阅，开通套餐后即可使用服务</p>
+                <button class="open-plan-btn" onclick="openPlanPage()">
+                    <i class="fas fa-rocket"></i>
+                    前往开通新的套餐
+                </button>
             </div>
+            <script>
+                const vscode = acquireVsCodeApi();
+                
+                function openPlanPage() {
+                    vscode.postMessage({
+                        type: 'openPlanPage'
+                    });
+                }
+            </script>
         </body>
         </html>`;
     }
@@ -402,6 +469,32 @@ class SubscriptionViewProvider {
                     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
                 }
 
+                /* 续费按钮样式 */
+                .renew-btn {
+                    padding: 4px 12px;
+                    border: none;
+                    border-radius: 12px;
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    font-size: 11px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    white-space: nowrap;
+                }
+
+                .renew-btn:hover {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                    transform: translateY(-1px);
+                }
+
+                .renew-btn:active {
+                    transform: translateY(0);
+                }
+
                 /* 模态框样式 */
                 .modal-overlay {
                     display: none;
@@ -502,6 +595,94 @@ class SubscriptionViewProvider {
                     font-weight: 600;
                     margin-top: 8px;
                 }
+
+                /* 支付弹窗特定样式 */
+                .payment-modal-content {
+                    max-width: 500px;
+                    width: 90%;
+                }
+
+                .qr-code-container {
+                    text-align: center;
+                    padding: 20px;
+                    background: white;
+                    border-radius: 8px;
+                    margin: 16px 0;
+                }
+
+                .qr-code-container img {
+                    max-width: 200px;
+                    height: auto;
+                }
+
+                .payment-info {
+                    margin: 12px 0;
+                    padding: 12px;
+                    background: var(--vscode-input-background);
+                    border-radius: 6px;
+                }
+
+                .payment-info-item {
+                    display: flex;
+                    justify-content: space-between;
+                    padding: 6px 0;
+                    font-size: 13px;
+                }
+
+                .payment-info-label {
+                    color: var(--vscode-descriptionForeground);
+                }
+
+                .payment-info-value {
+                    font-weight: 600;
+                    color: var(--vscode-foreground);
+                }
+
+                .payment-status {
+                    text-align: center;
+                    padding: 12px;
+                    margin: 12px 0;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    font-weight: 500;
+                }
+
+                .payment-status.waiting {
+                    background: rgba(255, 193, 7, 0.2);
+                    color: #FFC107;
+                }
+
+                .payment-status.success {
+                    background: rgba(76, 175, 80, 0.2);
+                    color: #4CAF50;
+                }
+
+                .payment-status.failed {
+                    background: rgba(231, 76, 60, 0.2);
+                    color: #E74C3C;
+                }
+
+                .declaration-text {
+                    font-size: 13px;
+                    line-height: 1.8;
+                    color: var(--vscode-foreground);
+                    margin-bottom: 12px;
+                }
+
+                .declaration-text strong {
+                    color: var(--vscode-textLink-foreground);
+                }
+
+                .declaration-list {
+                    margin-left: 20px;
+                    font-size: 13px;
+                    line-height: 1.8;
+                }
+
+                .declaration-list li {
+                    margin-bottom: 8px;
+                    color: var(--vscode-foreground);
+                }
             </style>
         `;
         let html = `<!DOCTYPE html>
@@ -560,7 +741,10 @@ class SubscriptionViewProvider {
             return `
             <div class="subscription-card">
                 <div class="card-header">
-                    <div class="card-title"><i class="fas fa-bullseye icon"></i>${sub.subscriptionPlanName || '未知套餐'}</div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                        <div class="card-title"><i class="fas fa-bullseye icon"></i>${sub.subscriptionPlanName || '未知套餐'}</div>
+                        <button class="renew-btn" data-plan-id="${sub.subscriptionPlan?.id || ''}" data-plan-name="${sub.subscriptionPlanName || ''}"><i class="fas fa-redo-alt"></i> 续费</button>
+                    </div>
                     <div class="status-badge status-${statusClass}">${statusText}</div>
                 </div>
                 <div class="info-grid">
@@ -668,6 +852,69 @@ class SubscriptionViewProvider {
                     <div class="modal-footer">
                         <button class="modal-btn modal-btn-cancel" id="modalCancelBtn">取消</button>
                         <button class="modal-btn modal-btn-confirm" id="modalConfirmBtn" disabled>确认重置</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 续费确认（购买声明）模态框 -->
+            <div class="modal-overlay" id="renewConfirmModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <i class="fas fa-file-contract"></i>
+                        购买声明 - <span id="renewPlanName"></span>
+                    </div>
+                    <div class="modal-body">
+                        <div class="declaration-text">
+                            <strong>请仔细阅读以下声明：</strong>
+                        </div>
+                        <ul class="declaration-list">
+                            <li>本站 CC 号池全部为 Max20，Codex 号池全部为 TEAM，绝无掺假</li>
+                            <li>本站仅提供中转，最终服务方为 Anthropic 与 OPENAI，如遇上游涨价或减额，我们也会跟随涨价与减额</li>
+                            <li>因质量问题引起的纠纷本站提供按日退款服务</li>
+                            <li>严禁共享使用、分发与二次销售，本站保留封号退款的权利（按使用日退款）</li>
+                        </ul>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="modal-btn modal-btn-cancel" id="renewCancelBtn">取消</button>
+                        <button class="modal-btn modal-btn-confirm" id="renewConfirmBtn">我已阅读并同意</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 支付弹窗 -->
+            <div class="modal-overlay" id="paymentModal">
+                <div class="modal-content payment-modal-content">
+                    <div class="modal-header">
+                        <i class="fas fa-qrcode"></i>
+                        扫码支付
+                    </div>
+                    <div class="modal-body">
+                        <div class="payment-status waiting" id="paymentStatus">
+                            <i class="fas fa-spinner fa-spin"></i> 等待支付...
+                        </div>
+                        <div class="qr-code-container" id="qrCodeContainer">
+                            <!-- 二维码将在这里显示 -->
+                        </div>
+                        <div class="payment-info">
+                            <div class="payment-info-item">
+                                <span class="payment-info-label">订单号：</span>
+                                <span class="payment-info-value" id="orderNo">-</span>
+                            </div>
+                            <div class="payment-info-item">
+                                <span class="payment-info-label">商品名称：</span>
+                                <span class="payment-info-value" id="subject">-</span>
+                            </div>
+                            <div class="payment-info-item">
+                                <span class="payment-info-label">支付金额：</span>
+                                <span class="payment-info-value" id="amount" style="color: #E74C3C; font-size: 16px;">-</span>
+                            </div>
+                        </div>
+                        <p style="text-align: center; font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 8px;">
+                            请使用微信扫描二维码完成支付
+                        </p>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="modal-btn modal-btn-cancel" id="closePaymentBtn">关闭</button>
                     </div>
                 </div>
             </div>
@@ -807,6 +1054,163 @@ class SubscriptionViewProvider {
                         currentResetSubId = null;
                     }
                 });
+
+                // ===== 续费功能 =====
+                // 续费按钮点击事件
+                document.querySelectorAll('.renew-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const planId = this.getAttribute('data-plan-id');
+                        const planName = this.getAttribute('data-plan-name');
+                        
+                        // 显示购买声明弹窗
+                        document.getElementById('renewPlanName').textContent = planName;
+                        document.getElementById('renewConfirmModal').classList.add('active');
+                        
+                        // 保存planId到确认按钮
+                        document.getElementById('renewConfirmBtn').setAttribute('data-plan-id', planId);
+                    });
+                });
+
+                // 购买声明确认按钮
+                document.getElementById('renewConfirmBtn').addEventListener('click', function() {
+                    const planId = this.getAttribute('data-plan-id');
+                    
+                    // 关闭确认弹窗
+                    document.getElementById('renewConfirmModal').classList.remove('active');
+                    
+                    // 调用创建订单接口
+                    vscode.postMessage({
+                        type: 'createPaymentOrder',
+                        planId: parseInt(planId),
+                        duration: 1
+                    });
+                });
+
+                // 购买声明取消按钮
+                document.getElementById('renewCancelBtn').addEventListener('click', function() {
+                    document.getElementById('renewConfirmModal').classList.remove('active');
+                });
+
+                // 关闭支付弹窗
+                document.getElementById('closePaymentBtn').addEventListener('click', function() {
+                    document.getElementById('paymentModal').classList.remove('active');
+                    // 停止轮询
+                    if (window.paymentPollingTimer) {
+                        clearInterval(window.paymentPollingTimer);
+                        window.paymentPollingTimer = null;
+                    }
+                });
+
+                // 点击背景关闭弹窗
+                document.getElementById('renewConfirmModal').addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('active');
+                    }
+                });
+
+                document.getElementById('paymentModal').addEventListener('click', function(e) {
+                    if (e.target === this) {
+                        this.classList.remove('active');
+                        if (window.paymentPollingTimer) {
+                            clearInterval(window.paymentPollingTimer);
+                            window.paymentPollingTimer = null;
+                        }
+                    }
+                });
+
+                // 监听来自扩展的消息
+                window.addEventListener('message', event => {
+                    const message = event.data;
+                    
+                    switch (message.type) {
+                        case 'showPaymentQRCode':
+                            handleShowPaymentQRCode(message.data);
+                            break;
+                        case 'updatePaymentStatus':
+                            handleUpdatePaymentStatus(message.data);
+                            break;
+                    }
+                });
+
+                // 处理显示支付二维码
+                function handleShowPaymentQRCode(data) {
+                    const { qrCode, orderNo, paymentOrderDTO } = data;
+                    
+                    // 显示支付弹窗
+                    document.getElementById('paymentModal').classList.add('active');
+                    
+                    // 显示二维码（使用 QRCode.js 或直接生成）
+                    const qrContainer = document.getElementById('qrCodeContainer');
+                    qrContainer.innerHTML = '<div id="qrcode"></div>';
+                    
+                    // 使用第三方库生成二维码
+                    // 这里简单起见，使用 API 生成二维码图片
+                    const qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(qrCode);
+                    qrContainer.innerHTML = '<img src="' + qrCodeUrl + '" alt="支付二维码" />';
+                    
+                    // 显示订单信息
+                    document.getElementById('orderNo').textContent = orderNo;
+                    document.getElementById('subject').textContent = paymentOrderDTO.subject;
+                    document.getElementById('amount').textContent = '¥' + paymentOrderDTO.amount.toFixed(2);
+                    
+                    // 开始轮询订单状态
+                    startPaymentPolling(orderNo);
+                }
+
+                // 处理更新支付状态
+                function handleUpdatePaymentStatus(data) {
+                    const { tradeStatus, success } = data;
+                    const statusElement = document.getElementById('paymentStatus');
+                    
+                    // 支付成功：tradeStatus不为NOTPAY（即为其他任何状态如SUCCESS、PAYING等）
+                    if (tradeStatus && tradeStatus !== 'NOTPAY') {
+                        // 支付成功
+                        statusElement.className = 'payment-status success';
+                        statusElement.innerHTML = '<i class="fas fa-check-circle"></i> 支付成功！';
+                        
+                        // 停止轮询
+                        if (window.paymentPollingTimer) {
+                            clearInterval(window.paymentPollingTimer);
+                            window.paymentPollingTimer = null;
+                        }
+                        
+                        // 2秒后关闭弹窗并刷新订阅详情
+                        setTimeout(() => {
+                            document.getElementById('paymentModal').classList.remove('active');
+                            vscode.postMessage({ type: 'refreshSubscription' });
+                        }, 2000);
+                    } else if (tradeStatus === 'NOTPAY') {
+                        // 等待支付
+                        statusElement.className = 'payment-status waiting';
+                        statusElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 等待支付...';
+                    } else {
+                        // 未知状态，继续等待
+                        statusElement.className = 'payment-status waiting';
+                        statusElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 等待支付...';
+                    }
+                }
+
+                // 开始轮询支付状态
+                function startPaymentPolling(orderNo) {
+                    // 清除之前的轮询
+                    if (window.paymentPollingTimer) {
+                        clearInterval(window.paymentPollingTimer);
+                    }
+                    
+                    // 每5秒查询一次订单状态
+                    window.paymentPollingTimer = setInterval(() => {
+                        vscode.postMessage({
+                            type: 'queryPaymentStatus',
+                            orderNo: orderNo
+                        });
+                    }, 5000);
+                    
+                    // 立即查询一次
+                    vscode.postMessage({
+                        type: 'queryPaymentStatus',
+                        orderNo: orderNo
+                    });
+                }
             </script>
         </body>
         </html>`;

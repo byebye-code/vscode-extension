@@ -2,7 +2,10 @@ import * as vscode from 'vscode';
 import { LoginViewProvider } from './LoginViewProvider';
 import { DashboardViewProvider } from './DashboardViewProvider';
 import { SubscriptionViewProvider } from './SubscriptionViewProvider';
+import { AnnouncementViewProvider } from './AnnouncementViewProvider';
+import { AnnouncementNotificationService } from './AnnouncementNotificationService';
 import { SettingsViewProvider } from './SettingsViewProvider';
+import { FriendLinksViewProvider } from './FriendLinksViewProvider';
 import { CreditService } from './CreditService';
 import { CodexService } from './CodexService';
 
@@ -14,8 +17,8 @@ let codexService: CodexService;
 let subscriptionViewProvider: SubscriptionViewProvider;
 // 登录视图提供者
 let loginViewProvider: LoginViewProvider;
-// 自动重新登录定时器
-let autoReloginTimer: NodeJS.Timeout | undefined;
+// 公告通知服务实例
+let announcementNotificationService: AnnouncementNotificationService;
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('88Code 插件已激活！');
@@ -34,9 +37,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
-
-    // 启动自动重新登录定时任务
-    startAutoReloginTask(context);
 
     // 注册看板视图提供程序
     const dashboardViewProvider = new DashboardViewProvider(context);
@@ -63,11 +63,33 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
+    // 注册公告视图提供程序
+    const announcementViewProvider = new AnnouncementViewProvider(context);
+    console.log('正在注册 AnnouncementViewProvider，viewType:', AnnouncementViewProvider.viewType);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(AnnouncementViewProvider.viewType, announcementViewProvider, {
+            webviewOptions: {
+                retainContextWhenHidden: true
+            }
+        })
+    );
+
     // 注册设置视图提供程序
     const settingsViewProvider = new SettingsViewProvider(context);
     console.log('正在注册 SettingsViewProvider，viewType:', SettingsViewProvider.viewType);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(SettingsViewProvider.viewType, settingsViewProvider, {
+            webviewOptions: {
+                retainContextWhenHidden: true
+            }
+        })
+    );
+
+    // 注册友链视图提供程序
+    const friendLinksViewProvider = new FriendLinksViewProvider(context.extensionUri);
+    console.log('正在注册 FriendLinksViewProvider，viewType:', FriendLinksViewProvider.viewType);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(FriendLinksViewProvider.viewType, friendLinksViewProvider, {
             webviewOptions: {
                 retainContextWhenHidden: true
             }
@@ -81,6 +103,16 @@ export function activate(context: vscode.ExtensionContext) {
     // 初始化 Codex 服务
     codexService = new CodexService(context);
     codexService.start();
+
+    // 初始化公告通知服务，启动时显示最新公告（如果已登录且未禁用）
+    announcementNotificationService = new AnnouncementNotificationService(context);
+    const disableNotification = context.globalState.get('88code_disable_announcement_notification');
+    if (token && !disableNotification) {
+        // 延迟2秒显示公告，避免启动时太多弹窗
+        setTimeout(() => {
+            announcementNotificationService.start();
+        }, 2000);
+    }
 
     // 注册命令
     const helloWorldDisposable = vscode.commands.registerCommand('extension.helloWorld', () => {
@@ -96,17 +128,12 @@ export function activate(context: vscode.ExtensionContext) {
         await context.globalState.update('88code_token', undefined);
         await context.globalState.update('88code_cached_credits', undefined);
         await context.globalState.update('88code_cached_codex', undefined);
-        // 清除保存的账号密码
-        await context.globalState.update('88code_username', undefined);
-        await context.globalState.update('88code_password', undefined);
-        await context.globalState.update('88code_last_login', undefined);
         await vscode.commands.executeCommand('setContext', '88code:loggedIn', false);
         creditService.stop();
         codexService.stop();
-        // 停止自动重新登录任务
-        if (autoReloginTimer) {
-            clearInterval(autoReloginTimer);
-            autoReloginTimer = undefined;
+        // 清理公告通知服务
+        if (announcementNotificationService) {
+            announcementNotificationService.dispose();
         }
         vscode.window.showInformationMessage('已退出登录');
     });
@@ -126,6 +153,11 @@ export function activate(context: vscode.ExtensionContext) {
         creditService.showSubscriptionPanel();
     });
 
+    // 显示积分历史记录命令
+    const showCreditHistoryDisposable = vscode.commands.registerCommand('88code.showCreditHistory', async () => {
+        await creditService.showCreditHistory();
+    });
+
     // 更新设置命令
     const updateSettingsDisposable = vscode.commands.registerCommand('88code.updateSettings', async (settings: any) => {
         creditService.updateSettings(settings);
@@ -138,9 +170,20 @@ export function activate(context: vscode.ExtensionContext) {
         if (isLoggedIn) {
             await creditService.start();
             await codexService.start();
+            // 登录成功后显示最新公告（如果未禁用）
+            const disableNotification = context.globalState.get('88code_disable_announcement_notification');
+            if (!disableNotification && announcementNotificationService) {
+                setTimeout(() => {
+                    announcementNotificationService.start();
+                }, 1000);
+            }
         } else {
             await creditService.stop();
             await codexService.stop();
+            // 清理公告通知服务
+            if (announcementNotificationService) {
+                announcementNotificationService.dispose();
+            }
         }
     });
 
@@ -151,102 +194,15 @@ export function activate(context: vscode.ExtensionContext) {
         refreshCreditsDisposable,
         resetCreditsDisposable,
         showSubscriptionInfoDisposable,
+        showCreditHistoryDisposable,
         updateSettingsDisposable,
         loginStatusListener
     );
 }
 
-/**
- * 启动自动重新登录定时任务
- * 每24小时自动使用保存的账号密码重新登录，刷新token
- */
-function startAutoReloginTask(context: vscode.ExtensionContext) {
-    // 清除之前的定时器
-    if (autoReloginTimer) {
-        clearInterval(autoReloginTimer);
-    }
-
-    // 检查是否有保存的账号密码
-    const username = context.globalState.get<string>('88code_username');
-    const password = context.globalState.get<string>('88code_password');
-
-    if (!username || !password) {
-        console.log('没有保存的账号密码，跳过自动重新登录任务');
-        return;
-    }
-
-    console.log('已启动自动重新登录任务，将每24小时自动刷新token');
-
-    // 立即执行一次检查（如果上次登录超过23小时，则重新登录）
-    checkAndRelogin(context);
-
-    // 设置定时器，每24小时执行一次
-    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-    autoReloginTimer = setInterval(() => {
-        checkAndRelogin(context);
-    }, TWENTY_FOUR_HOURS);
-}
-
-/**
- * 检查并执行自动重新登录
- */
-async function checkAndRelogin(context: vscode.ExtensionContext) {
-    try {
-        const lastLogin = context.globalState.get<string>('88code_last_login');
-        
-        if (!lastLogin) {
-            console.log('没有上次登录时间记录，执行自动重新登录');
-            await performAutoRelogin();
-            return;
-        }
-
-        const lastLoginTime = new Date(lastLogin).getTime();
-        const now = new Date().getTime();
-        const hoursSinceLastLogin = (now - lastLoginTime) / (1000 * 60 * 60);
-
-        // 如果距离上次登录超过23小时，则自动重新登录
-        if (hoursSinceLastLogin >= 23) {
-            console.log(`距离上次登录已${hoursSinceLastLogin.toFixed(1)}小时，执行自动重新登录`);
-            await performAutoRelogin();
-        } else {
-            console.log(`距离上次登录仅${hoursSinceLastLogin.toFixed(1)}小时，暂不需要重新登录`);
-        }
-    } catch (error) {
-        console.error('检查自动重新登录失败:', error);
-    }
-}
-
-/**
- * 执行自动重新登录
- */
-async function performAutoRelogin() {
-    try {
-        if (!loginViewProvider) {
-            console.error('登录视图提供者未初始化');
-            return;
-        }
-
-        console.log('正在执行自动重新登录...');
-        const success = await loginViewProvider.autoRelogin();
-
-        if (success) {
-            console.log('自动重新登录成功，token已更新');
-            // 通知积分服务刷新数据
-            if (creditService) {
-                await creditService.refreshCredits();
-            }
-        } else {
-            console.log('自动重新登录失败，可能需要手动登录');
-        }
-    } catch (error) {
-        console.error('执行自动重新登录失败:', error);
-    }
-}
-
 export function deactivate() {
-    // 清除自动重新登录定时器
-    if (autoReloginTimer) {
-        clearInterval(autoReloginTimer);
-        autoReloginTimer = undefined;
+    // 清理公告通知服务
+    if (announcementNotificationService) {
+        announcementNotificationService.dispose();
     }
 }

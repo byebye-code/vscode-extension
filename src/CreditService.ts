@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as https from 'https';
 import { URL } from 'url';
 import { SubscriptionViewProvider } from './SubscriptionViewProvider';
+import { CreditHistoryPanel } from './CreditHistoryPanel';
 
 export class CreditService {
     private _context: vscode.ExtensionContext;
@@ -14,6 +15,7 @@ export class CreditService {
     private _subscriptionData: any = null; // 存储订阅信息
     private _subscriptionPanel?: vscode.WebviewPanel; // 订阅信息面板（保留用于全屏查看）
     private _subscriptionViewProvider: SubscriptionViewProvider; // 订阅视图提供者
+    private _creditHistoryPanel?: CreditHistoryPanel; // 积分历史面板
     private _settings: any = {
         prefixText: '剩余余额: ',
         suffixText: '',
@@ -33,6 +35,15 @@ export class CreditService {
         this._subscriptionViewProvider.setMessageHandler(async (message) => {
             if (message.type === 'resetSingleSubscription') {
                 await this.resetSingleSubscription(message.subId);
+            } else if (message.type === 'createPaymentOrder') {
+                await this.createPaymentOrder(message.planId, message.duration);
+            } else if (message.type === 'queryPaymentStatus') {
+                await this.queryPaymentStatus(message.orderNo);
+            } else if (message.type === 'refreshSubscription') {
+                await this.refreshCredits();
+            } else if (message.type === 'openPlanPage') {
+                // 打开开通套餐页面
+                vscode.env.openExternal(vscode.Uri.parse('https://88code.org/login'));
             }
         });
 
@@ -42,11 +53,8 @@ export class CreditService {
             100
         );
 
-        // 设置命令，点击时打开订阅详情侧边栏
-        this._statusBarItem.command = {
-            command: 'workbench.view.extension.code88-panel',
-            title: '打开订阅详情'
-        };
+        // 设置命令，点击时打开积分历史记录
+        this._statusBarItem.command = '88code.showCreditHistory';
         this._statusBarItem.tooltip = new vscode.MarkdownString('**点击查看订阅详情**\n\n加载订阅信息中...');
         this._statusBarItem.tooltip.supportHtml = true;
 
@@ -1149,6 +1157,70 @@ export class CreditService {
         });
     }
 
+    // 创建支付订单
+    public async createPaymentOrder(planId: number, duration: number) {
+        try {
+            const token = this._context.globalState.get('88code_token') as string;
+            if (!token) {
+                vscode.window.showErrorMessage('未找到登录令牌，请重新登录');
+                return;
+            }
+
+            const requestData = {
+                planId: planId,
+                duration: duration
+            };
+
+            const response = await this.httpRequestWithAuth(
+                'POST',
+                'https://88code.org/admin-api/cc-admin/payment/subscription/create',
+                token,
+                requestData
+            );
+
+            if (response.ok && response.data) {
+                // 显示支付二维码
+                this._subscriptionViewProvider.showPaymentQRCode(response.data);
+            } else {
+                vscode.window.showErrorMessage(`创建支付订单失败: ${response.msg || '未知错误'}`);
+            }
+        } catch (error) {
+            console.error('创建支付订单失败:', error);
+            vscode.window.showErrorMessage(`创建支付订单失败: ${error}`);
+        }
+    }
+
+    // 查询支付状态
+    public async queryPaymentStatus(orderNo: string) {
+        try {
+            const token = this._context.globalState.get('88code_token') as string;
+            if (!token) {
+                return;
+            }
+
+            const response = await this.httpRequestWithAuth(
+                'GET',
+                `https://88code.org/admin-api/cc-admin/payment/query/${orderNo}`,
+                token
+            );
+
+            if (response.ok && response.data) {
+                // 更新支付状态
+                this._subscriptionViewProvider.updatePaymentStatus(response.data);
+            }
+        } catch (error) {
+            console.error('查询支付状态失败:', error);
+        }
+    }
+
+    // 显示积分历史记录
+    public async showCreditHistory() {
+        if (!this._creditHistoryPanel) {
+            this._creditHistoryPanel = new CreditHistoryPanel(this._context);
+        }
+        await this._creditHistoryPanel.show();
+    }
+
     public dispose() {
         this.stopPeriodicRefresh();
         if (this._hideChangeTimer) {
@@ -1158,6 +1230,10 @@ export class CreditService {
         if (this._subscriptionPanel) {
             this._subscriptionPanel.dispose();
             this._subscriptionPanel = undefined;
+        }
+        if (this._creditHistoryPanel) {
+            this._creditHistoryPanel.dispose();
+            this._creditHistoryPanel = undefined;
         }
         this._statusBarItem.dispose();
     }
