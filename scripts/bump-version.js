@@ -25,19 +25,30 @@ try {
         throw new Error('版本号格式必须是 x.y.z 格式');
     }
     
-    // 递增最后一位数字，不允许进位
-    let lastPart = parseInt(versionParts[2]);
+    // 递增最后一位数字，支持进位到中间位
+    let major = parseInt(versionParts[0]);
+    let minor = parseInt(versionParts[1]);
+    let patch = parseInt(versionParts[2]);
     
-    // 如果最后一位已经是9，则设置为0（不进位）
-    if (lastPart >= 9) {
-        lastPart = 0;
-        console.log('⚠️  最后一位已达到9，重置为0（不进位）');
-    } else {
-        lastPart += 1;
+    // 递增 patch 版本号
+    patch += 1;
+    
+    // 如果 patch 达到 10，则进位到 minor
+    if (patch >= 10) {
+        patch = 0;
+        minor += 1;
+        console.log('⚠️  patch 版本已达到 9，进位到 minor 版本');
+    }
+    
+    // 如果 minor 达到 10，则进位到 major
+    if (minor >= 10) {
+        minor = 0;
+        major += 1;
+        console.log('⚠️  minor 版本已达到 9，进位到 major 版本');
     }
     
     // 构造新版本号
-    const newVersion = `${versionParts[0]}.${versionParts[1]}.${lastPart}`;
+    const newVersion = `${major}.${minor}.${patch}`;
     
     // 更新 package.json
     packageJson.version = newVersion;
